@@ -503,6 +503,19 @@ fn materialize_constant(
         LLVMConstantPointerNullValueKind => {
             builder.ins().iconst(translate_pointer_type(data_layout), 0)
         }
+        LLVMFunctionValueKind => {
+            let signature = builder.import_signature(translate_sig(
+                unsafe { LLVMGetElementType(LLVMTypeOf(llvm_val)) },
+                data_layout,
+            ));
+            let name = translate_function_name(unsafe { LLVMGetValueName(llvm_val) })
+                .expect("unimplemented: unusual function names");
+            let callee = builder.import_function(ir::ExtFuncData { name, signature });
+            builder.ins().func_addr(
+                translate_pointer_type(data_layout),
+                callee,
+            )
+        }
         LLVMConstantFPValueKind => {
             let mut loses_info = [0];
             let val = unsafe { LLVMConstRealGetDouble(llvm_val, loses_info.as_mut_ptr()) };
