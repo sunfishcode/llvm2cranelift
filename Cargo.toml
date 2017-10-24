@@ -1,0 +1,18 @@
+[package]
+name = "llvm2cretonne-tools"
+version = "0.0.0"
+authors = ["The Cretonne Project Developers"]
+publish = false
+license = "MIT/Apache-2.0"
+
+[[bin]]
+name = "llvm2cretonne"
+
+[dependencies]
+cretonne-llvm = { path = "lib/llvm" }
+cretonne = { git = "https://github.com/stoklund/cretonne.git"}
+cretonne-reader = { git = "https://github.com/stoklund/cretonne.git"}
+docopt = "0.8.0"
+serde = "1.0.8"
+serde_derive = "1.0.8"
+term = "0.4.6"

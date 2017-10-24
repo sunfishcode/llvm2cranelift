@@ -1,0 +1,17 @@
+[package]
+name = "cretonne-llvm"
+version = "0.0.0"
+authors = ["The Cretonne Project Developers"]
+publish = false
+description = "Translator from LLVM IR to Cretonne IL"
+repository = "https://github.com/stoklund/cretonne"
+license = "Apache-2.0"
+
+[lib]
+name = "cton_llvm"
+
+[dependencies]
+cretonne = { git = "https://github.com/stoklund/cretonne.git" }
+cretonne-frontend = { git = "https://github.com/stoklund/cretonne.git" }
+llvm-sys = "50.0.0"
+libc = "0.2.32"
