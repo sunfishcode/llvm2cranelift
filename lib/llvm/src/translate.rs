@@ -275,7 +275,7 @@ pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
 
 /// Return the Cretonne integer type for a pointer.
 pub fn translate_pointer_type(data_layout: LLVMTargetDataRef) -> ir::Type {
-    translate_integer_type(unsafe { LLVMPointerSize(data_layout) } as usize)
+    translate_integer_type(unsafe { LLVMPointerSize(data_layout) * 8 } as usize)
 }
 
 /// Translate an LLVM first-class type into a Cretonne type.
