@@ -29,7 +29,7 @@ use llvm_sys::*;
 use libc;
 
 use translate::{Variable, translate_type, translate_pointer_type, translate_sig,
-                translate_function_name};
+                translate_function_name, translate_string};
 
 /// Translate the incoming parameters for `llvm_func` into Cretonne values
 /// defined in the entry block.
@@ -399,10 +399,14 @@ pub fn translate_inst(
             def_val(llvm_inst, ptr, builder, value_map, data_layout);
         }
         LLVMCall => {
-            // LLVM's C API doesn't expose intrinsic IDs yet.
-            if unsafe { LLVMGetIntrinsicID(llvm_inst) } != 0 {
-                panic!("unsupported: intrinsics");
+            let callee_index = unsafe { LLVMGetNumOperands(llvm_inst) } - 1;
+            let llvm_callee = unsafe { LLVMGetOperand(llvm_inst, callee_index as libc::c_uint) };
+
+            if unsafe { LLVMGetIntrinsicID(llvm_callee) } != 0 {
+                translate_intrinsic(llvm_inst, llvm_callee, builder, value_map, data_layout);
+                return;
             }
+
             // Fast and cold are not ABI-exposed, so we can handle them however
             // we like. Just handle them the same as normal calls for now.
             let callconv = unsafe { LLVMGetInstructionCallConv(llvm_inst) };
@@ -412,8 +416,6 @@ pub fn translate_inst(
             {
                 panic!("unimplemented calling convention: {}", callconv);
             }
-            let callee_index = unsafe { LLVMGetNumOperands(llvm_inst) } - 1;
-            let llvm_callee = unsafe { LLVMGetOperand(llvm_inst, callee_index as libc::c_uint) };
             // Collect the call arguments.
             // TODO: Implement ABI-exposed argument attributes such as byval,
             // signext, zeroext, inreg, inalloca, align.
@@ -526,6 +528,331 @@ fn materialize_constant(
             panic!("unimplemented constant kind: {:?}", llvm_kind);
         }
     }
+}
+
+/// Translate an LLVM IR intrinsic call to Cretonne.
+fn translate_intrinsic(
+    llvm_inst: LLVMValueRef,
+    llvm_callee: LLVMValueRef,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+    value_map: &mut HashMap<LLVMValueRef, Variable>,
+    data_layout: LLVMTargetDataRef,
+) {
+    // LLVM's C API doesn't expose intrinsic IDs yet, so we match by name.
+    let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
+        .expect("unimplemented: unusual function names");
+    match name.as_ref() {
+        "llvm.assume" => {
+            // For now, just discard this informtion.
+        }
+        "llvm.ceil.f32" | "llvm.ceil.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().ceil(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.floor.f32" | "llvm.floor.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().floor(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.trunc.f32" | "llvm.trunc.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().trunc(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.nearbyint.f32" |
+        "llvm.nearbyint.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().nearest(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.ctpop.i8" | "llvm.ctpop.i16" | "llvm.ctpop.i32" | "llvm.ctpop.i64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().popcnt(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.ctlz.i8" | "llvm.ctlz.i16" | "llvm.ctlz.i32" | "llvm.ctlz.i64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().clz(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.cttz.i8" | "llvm.cttz.i16" | "llvm.cttz.i32" | "llvm.cttz.i64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().ctz(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.trap" => {
+            builder.ins().trap(ir::TrapCode::User(1));
+        }
+        "llvm.debugtrap" => {
+            builder.ins().trap(ir::TrapCode::User(2));
+        }
+        "llvm.sin.f32" => {
+            translate_intr_libcall(
+                "sinf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.sin.f64" => {
+            translate_intr_libcall(
+                "sin",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.cos.f32" => {
+            translate_intr_libcall(
+                "cosf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.cos.f64" => {
+            translate_intr_libcall(
+                "cos",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.tan.f32" => {
+            translate_intr_libcall(
+                "tanf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.tan.f64" => {
+            translate_intr_libcall(
+                "tan",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.exp.f32" => {
+            translate_intr_libcall(
+                "expf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.exp.f64" => {
+            translate_intr_libcall(
+                "exp",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log.f32" => {
+            translate_intr_libcall(
+                "logf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log.f64" => {
+            translate_intr_libcall(
+                "log",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log2.f32" => {
+            translate_intr_libcall(
+                "log2f",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log2.f64" => {
+            translate_intr_libcall(
+                "log2",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log10.f32" => {
+            translate_intr_libcall(
+                "log10f",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.log10.f64" => {
+            translate_intr_libcall(
+                "log10",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.memcpy.p0i8.p0i8.i32" |
+        "llvm.memcpy.p0i8.p0i8.i64" => {
+            translate_mem_intrinsic(
+                "memcpy",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.memmove.p0i8.p0i8.i32" |
+        "llvm.memmove.p0i8.p0i8.i64" => {
+            translate_mem_intrinsic(
+                "memmove",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.memset.p0i8.i32" |
+        "llvm.memset.p0i8.i64" => {
+            translate_mem_intrinsic(
+                "memset",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        _ => {
+            panic!("unsupported: intrinsic: {}", name);
+        }
+    }
+}
+
+/// Translate an LLVM IR intrinsic call which corresponds directly to a
+/// C library call.
+fn translate_intr_libcall(
+    name: &str,
+    llvm_inst: LLVMValueRef,
+    llvm_callee: LLVMValueRef,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+    value_map: &mut HashMap<LLVMValueRef, Variable>,
+    data_layout: LLVMTargetDataRef,
+) {
+    let num_args = unsafe { LLVMGetNumArgOperands(llvm_inst) } as usize;
+    let mut args = Vec::with_capacity(num_args);
+    for i in 0..num_args {
+        debug_assert_eq!(i as libc::c_uint as usize, i);
+        args.push(use_val(
+            unsafe { LLVMGetOperand(llvm_inst, i as libc::c_uint) },
+            builder,
+            value_map,
+            data_layout,
+        ));
+    }
+
+    let name = ir::FunctionName::new(name);
+    let signature = builder.import_signature(translate_sig(
+        unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
+        data_layout,
+    ));
+    let data = ir::ExtFuncData { name, signature };
+    let callee = builder.import_function(data);
+    let call = builder.ins().call(callee, &args);
+    let result = {
+        let results = builder.inst_results(call);
+        debug_assert_eq!(results.len(), 1);
+        results[0]
+    };
+    def_val(llvm_inst, result, builder, value_map, data_layout);
+}
+
+/// Translate an LLVM IR llvm.memcpy/memmove/memset call.
+fn translate_mem_intrinsic(
+    name: &str,
+    llvm_inst: LLVMValueRef,
+    llvm_callee: LLVMValueRef,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+    value_map: &mut HashMap<LLVMValueRef, Variable>,
+    data_layout: LLVMTargetDataRef,
+) {
+    let pointer_type = translate_pointer_type(data_layout);
+    let llvm_len_arg = unsafe { LLVMGetOperand(llvm_inst, 2) };
+    let mut len_arg = use_val(llvm_len_arg, builder, value_map, data_layout);
+    let orig_type = translate_type_of(llvm_len_arg, data_layout);
+    if orig_type != pointer_type {
+        if orig_type.bits() > pointer_type.bits() {
+            len_arg = builder.ins().ireduce(pointer_type, len_arg)
+        } else if orig_type.bits() < pointer_type.bits() {
+            len_arg = builder.ins().uextend(pointer_type, len_arg)
+        }
+    }
+    let args = [
+        use_val(
+            unsafe { LLVMGetOperand(llvm_inst, 0) },
+            builder,
+            value_map,
+            data_layout,
+        ),
+        use_val(
+            unsafe { LLVMGetOperand(llvm_inst, 1) },
+            builder,
+            value_map,
+            data_layout,
+        ),
+        len_arg,
+    ];
+
+    let name = ir::FunctionName::new(name);
+    let mut sig = translate_sig(
+        unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
+        data_layout,
+    );
+    // Discard the alignment hint for now.
+    // This also drops the volatile flag, which is safe as long as Cretonne
+    // doesn't start optimizing these libcalls.
+    sig.params.resize(3, ir::AbiParam::new(ir::types::VOID));
+    let signature = builder.import_signature(sig);
+    let data = ir::ExtFuncData { name, signature };
+    let callee = builder.import_function(data);
+    builder.ins().call(callee, &args);
 }
 
 /// Record PHI uses and defs for a branch from `llvm_bb` to `llvm_succ`.

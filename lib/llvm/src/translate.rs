@@ -66,7 +66,7 @@ impl Default for EbbInfo {
 }
 
 /// Translate from an llvm-sys C-style string to a Rust String.
-fn translate_string(charstar: *const libc::c_char) -> Result<String, String> {
+pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String> {
     Ok(
         unsafe { ffi::CStr::from_ptr(charstar) }
             .to_str()
