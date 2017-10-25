@@ -1173,9 +1173,7 @@ fn translate_gep_index(
 
             (x, llvm_eltty)
         }
-        _ => {
-            panic!("unexpected GEP indexing type: {:?}", llvm_gepty);
-        }
+        _ => panic!("unexpected GEP indexing type: {:?}", llvm_gepty),
     };
     (builder.ins().iadd(ptr, offset), ty)
 }
