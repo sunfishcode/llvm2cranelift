@@ -316,29 +316,25 @@ pub fn translate_inst(
                 if llvm_next_bb == llvm_true_succ {
                     handle_phi_operands(llvm_bb, llvm_false_succ, builder, value_map, data_layout);
                     builder.ins().brz(cond, ebb_map[&llvm_false_succ], &[]);
-                    if ebb_map.get(&llvm_true_succ).is_some() {
-                        jump(
-                            llvm_bb,
-                            llvm_true_succ,
-                            builder,
-                            value_map,
-                            ebb_map,
-                            data_layout,
-                        );
-                    }
+                    jump(
+                        llvm_bb,
+                        llvm_true_succ,
+                        builder,
+                        value_map,
+                        ebb_map,
+                        data_layout,
+                    );
                 } else {
                     handle_phi_operands(llvm_bb, llvm_true_succ, builder, value_map, data_layout);
                     builder.ins().brnz(cond, ebb_map[&llvm_true_succ], &[]);
-                    if ebb_map.get(&llvm_false_succ).is_some() {
-                        jump(
-                            llvm_bb,
-                            llvm_false_succ,
-                            builder,
-                            value_map,
-                            ebb_map,
-                            data_layout,
-                        );
-                    }
+                    jump(
+                        llvm_bb,
+                        llvm_false_succ,
+                        builder,
+                        value_map,
+                        ebb_map,
+                        data_layout,
+                    );
                 }
             } else {
                 let llvm_succ = successor(llvm_inst, 0);
