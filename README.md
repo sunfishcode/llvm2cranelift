@@ -63,6 +63,7 @@ yet fully implement include:
  - atomic operations
  - volatile operations
  - integer types with unusual sizes
+ - add-with-overflow intrinsics
  - inline asm
  - GC hooks
  - varargs
@@ -74,6 +75,7 @@ implemented include:
  - Pattern-match operations that are not present in LLVM IR, such as
    rotates, `*_imm` operations, load/store offsets, wrapping/extending
    loads and stores, `br_icmp`, etc.
+ - Expand @llvm.powi with small integer constants into efficient sequences.
 
 Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
 SSA defs directly into Cretonne; it instead just reports uses and defs to

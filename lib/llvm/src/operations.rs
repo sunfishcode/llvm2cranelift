@@ -249,6 +249,7 @@ pub fn translate_inst(
             let from = translate_type_of(llvm_op, data_layout);
             let to = translate_type_of(llvm_inst, data_layout);
             let result = if from == to {
+                // No-op bitcast.
                 use_val(llvm_op, builder, value_map, data_layout)
             } else {
                 builder.ins().bitcast(to, op)
@@ -261,6 +262,7 @@ pub fn translate_inst(
             let from = translate_type_of(llvm_op, data_layout);
             let to = translate_type_of(llvm_inst, data_layout);
             let result = if from == to {
+                // No-op cast.
                 use_val(llvm_op, builder, value_map, data_layout)
             } else if from.bits() > to.bits() {
                 builder.ins().ireduce(to, op)
@@ -298,9 +300,22 @@ pub fn translate_inst(
                 let llvm_true_succ = successor(llvm_inst, 0);
                 let llvm_false_succ = successor(llvm_inst, 1);
                 let llvm_next_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
+                // A conditional branch in Cretonne always falls through in
+                // the not-taken case, so test whether either successor of
+                // the LLVM IR conditional branch can be a fallthrough. If not,
+                // an unconditional branch can be added.
                 if llvm_next_bb == llvm_true_succ {
-                    handle_phi_operands(llvm_bb, llvm_false_succ, builder, value_map, data_layout);
-                    builder.ins().brz(cond, ebb_map[&llvm_false_succ], &[]);
+                    // It's valid for both destinations to be fallthroughs.
+                    if llvm_next_bb != llvm_false_succ {
+                        handle_phi_operands(
+                            llvm_bb,
+                            llvm_false_succ,
+                            builder,
+                            value_map,
+                            data_layout,
+                        );
+                        builder.ins().brz(cond, ebb_map[&llvm_false_succ], &[]);
+                    }
                     jump(
                         llvm_bb,
                         llvm_true_succ,
@@ -336,7 +351,7 @@ pub fn translate_inst(
                 if unsafe { LLVMConstIntGetZExtValue(llvm_val) } != i as u64 {
                     panic!("unimplemented: switches with non-sequential cases");
                 }
-                let llvm_case = unsafe { LLVMGetSuccessor(llvm_inst, i as libc::c_uint) };
+                let llvm_case = unsafe { LLVMGetSuccessor(llvm_inst, (i + 1) as libc::c_uint) };
                 data.push_entry(ebb_map[&llvm_case]);
             }
             let jt = builder.create_jump_table(data);
@@ -382,9 +397,9 @@ pub fn translate_inst(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMGetElementPtr => {
+            let pointer_type = translate_pointer_type(data_layout);
             let llvm_ptr = unsafe { LLVMGetOperand(llvm_inst, 0) };
             let mut ptr = use_val(llvm_ptr, builder, value_map, data_layout);
-            let pointer_type = translate_pointer_type(data_layout);
             let mut llvm_gepty = unsafe { LLVMTypeOf(llvm_ptr) };
             for i in 1..unsafe { LLVMGetNumOperands(llvm_inst) } as libc::c_uint {
                 let index = unsafe { LLVMGetOperand(llvm_inst, i) };
@@ -559,6 +574,7 @@ fn translate_intrinsic(
     let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
         .expect("unimplemented: unusual function names");
     match name.as_ref() {
+        "llvm.dbg.addr" |
         "llvm.dbg.declare" |
         "llvm.dbg.value" |
         "llvm.prefetch" |
@@ -570,6 +586,10 @@ fn translate_intrinsic(
         "llvm.sideeffect" => {
             // For now, just discard this informtion.
         }
+        "llvm.annotation.i8" |
+        "llvm.annotation.i16" |
+        "llvm.annotation.i32" |
+        "llvm.annotation.i64" |
         "llvm.invariant.group.barrier" |
         "llvm.expect.i1" |
         "llvm.expect.i8" |
@@ -644,10 +664,19 @@ fn translate_intrinsic(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         "llvm.trap" => {
+            // This intrinsic isn't a terminator in LLVM IR, but trap is a
+            // terminator in Cretonne. After the trap, start a new basic block.
             builder.ins().trap(ir::TrapCode::User(1));
+            let ebb = builder.create_ebb();
+            builder.seal_block(ebb);
+            builder.switch_to_block(ebb, &[]);
         }
         "llvm.debugtrap" => {
+            // See the comment on "llvm.trap".
             builder.ins().trap(ir::TrapCode::User(2));
+            let ebb = builder.create_ebb();
+            builder.seal_block(ebb);
+            builder.switch_to_block(ebb, &[]);
         }
         "llvm.fmuladd.f32" |
         "llvm.fmuladd.f64" => {
