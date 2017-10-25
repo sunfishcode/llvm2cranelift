@@ -5,7 +5,7 @@ use cretonne::settings::{self, FlagsOrIsa};
 use cretonne::isa;
 use cton_reader::{parse_options, Location};
 
-/// Like FlagsOrIsa, but holds ownership.
+/// Like `FlagsOrIsa`, but holds ownership.
 pub enum OwnedFlagsOrIsa {
     Flags(settings::Flags),
     Isa(Box<TargetIsa>),
