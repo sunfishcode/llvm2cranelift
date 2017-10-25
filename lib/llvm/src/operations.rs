@@ -39,14 +39,13 @@ use translate::{Variable, translate_type, translate_pointer_type, translate_sig,
 /// defined in the entry block.
 pub fn translate_function_params(
     llvm_func: LLVMValueRef,
-    entry_ebb: ir::Ebb,
     builder: &mut cton_frontend::FunctionBuilder<Variable>,
     value_map: &mut HashMap<LLVMValueRef, Variable>,
     data_layout: LLVMTargetDataRef,
 ) {
     for i in 0..unsafe { LLVMCountParams(llvm_func) } {
         let llvm_param = unsafe { LLVMGetParam(llvm_func, i) };
-        let val = builder.ebb_params(entry_ebb)[i as usize];
+        let val = builder.param_value(i as usize);
         def_val(llvm_param, val, builder, value_map, data_layout);
     }
 }

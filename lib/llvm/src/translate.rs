@@ -157,7 +157,6 @@ pub fn translate_function(
         }
 
         // Translate the contents of each basic block.
-        let mut entry_block = true;
         llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
         while !llvm_bb.is_null() {
             translate_bb(
@@ -168,10 +167,8 @@ pub fn translate_function(
                 &mut ebb_info,
                 &mut ebb_map,
                 data_layout,
-                entry_block,
             );
             llvm_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
-            entry_block = false;
         }
     }
 
@@ -219,17 +216,17 @@ fn translate_bb(
     ebb_info: &mut HashMap<LLVMBasicBlockRef, EbbInfo>,
     ebb_map: &mut HashMap<LLVMBasicBlockRef, ir::Ebb>,
     data_layout: LLVMTargetDataRef,
-    entry_block: bool,
 ) {
     // Set up the Ebb as needed.
     if ebb_info.get(&llvm_bb).is_none() {
         // Block has no predecessors.
+        let entry_block = !builder.entry_block_started();
         let ebb = builder.create_ebb();
         builder.seal_block(ebb);
         builder.switch_to_block(ebb, &[]);
         if entry_block {
             // It's the entry block. Add the parameters.
-            translate_function_params(llvm_func, ebb, builder, value_map, data_layout);
+            translate_function_params(llvm_func, builder, value_map, data_layout);
         }
     } else if let hash_map::Entry::Occupied(entry) = ebb_map.entry(llvm_bb) {
         // Block has predecessors and is branched to, so it starts a new Ebb.
