@@ -281,7 +281,7 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> i
         LLVMX86_FP80TypeKind => panic!("unimplemented: x86_fp80 type"),
         LLVMFP128TypeKind => panic!("unimplemented: f128 type"),
         LLVMPPC_FP128TypeKind => panic!("unimplemented: double double type"),
-        LLVMLabelTypeKind => panic!("attempted to translate label type"),
+        LLVMLabelTypeKind => panic!("unimplemented: label types"),
         LLVMIntegerTypeKind => translate_integer_type(
             unsafe { LLVMGetIntTypeWidth(llvm_ty) } as usize,
         ),
@@ -297,7 +297,7 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> i
         LLVMVectorTypeKind => panic!("unimplemented: vector types"),
         LLVMMetadataTypeKind => panic!("attempted to translate a metadata type"),
         LLVMX86_MMXTypeKind => panic!("unimplemented: MMX type"),
-        LLVMTokenTypeKind => panic!("attemped to translate a token type"),
+        LLVMTokenTypeKind => panic!("unimplemented: token types"),
     }
 }
 
