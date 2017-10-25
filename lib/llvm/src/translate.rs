@@ -198,7 +198,7 @@ fn prepare_for_bb(
     for i in 0..num_succs {
         let llvm_succ = unsafe { LLVMGetSuccessor(term, i) };
         {
-            let info = ebb_info.entry(llvm_succ).or_insert(EbbInfo::default());
+            let info = ebb_info.entry(llvm_succ).or_insert_with(EbbInfo::default);
             info.num_preds_left += 1;
         }
         // If the block is reachable by branch (and not fallthrough), or by
