@@ -1,3 +1,5 @@
+//! llvm2cretonne driver program.
+
 extern crate cretonne;
 extern crate cton_llvm;
 extern crate cton_reader;
