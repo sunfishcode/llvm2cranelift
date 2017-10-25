@@ -391,7 +391,7 @@ pub fn translate_inst(
             }
             let size = unsafe { LLVMConstIntGetZExtValue(llvm_op) } *
                 unsafe { LLVMABISizeOfType(data_layout, llvm_allocty) };
-            if size as u32 as u64 != size {
+            if u64::from(size as u32) != size {
                 panic!("unimplemented: alloca size computation doesn't fit in u32");
             }
             let stack_slot_data = ir::StackSlotData::new(ir::StackSlotKind::Local, size as u32);
@@ -1144,7 +1144,7 @@ fn translate_gep_index(
     let (offset, ty) = match unsafe { LLVMGetTypeKind(llvm_gepty) } {
         LLVMStructTypeKind => {
             let i = unsafe { LLVMConstIntGetZExtValue(index) };
-            debug_assert_eq!(i as libc::c_uint as u64, i);
+            debug_assert_eq!(u64::from(i as libc::c_uint), i);
             let offset = unsafe { LLVMOffsetOfElement(data_layout, llvm_gepty, i as libc::c_uint) };
             (
                 builder.ins().iconst(
@@ -1370,7 +1370,7 @@ fn translate_memflags(
     // LLVM IR has UB.
     flags.set_notrap();
 
-    if unsafe { LLVMGetAlignment(llvm_inst) } as u64 >=
+    if u64::from(unsafe { LLVMGetAlignment(llvm_inst) }) >=
         unsafe { LLVMABISizeOfType(data_layout, llvm_ty) }
     {
         flags.set_aligned();
