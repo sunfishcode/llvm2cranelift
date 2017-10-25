@@ -583,9 +583,17 @@ fn translate_intrinsic(
         "llvm.lifetime.end.p0i8" |
         "llvm.invariant.start.p0i8" |
         "llvm.invariant.end.p0i8" |
-        "llvm.sideeffect" => {
+        "llvm.sideeffect" |
+        "llvm.codeview.annotation" => {
             // For now, just discard this informtion.
         }
+        "llvm.ssa_copy.i1" |
+        "llvm.ssa_copy.i8" |
+        "llvm.ssa_copy.i16" |
+        "llvm.ssa_copy.i32" |
+        "llvm.ssa_copy.i64" |
+        "llvm.ssa_copy.f32" |
+        "llvm.ssa_copy.f64" |
         "llvm.annotation.i8" |
         "llvm.annotation.i16" |
         "llvm.annotation.i32" |
@@ -596,7 +604,8 @@ fn translate_intrinsic(
         "llvm.expect.i16" |
         "llvm.expect.i32" |
         "llvm.expect.i64" => {
-            // For now, just discard this informtion.
+            // For now, just discard the extra informtion these intrinsics
+            // provide and just return their first operand.
             let op = unary_operands(llvm_inst, builder, value_map, data_layout);
             def_val(llvm_inst, op, builder, value_map, data_layout);
         }
