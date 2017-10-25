@@ -52,68 +52,117 @@ pub fn translate_inst(
             // Nothing to do. Phis are handled elsewhere.
         }
         LLVMAdd => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().iadd(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().iadd(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().iadd_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSub => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().isub(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(rhs_reg) => builder.ins().isub(lhs, rhs_reg),
+                RegOrImm::Imm(rhs_imm) => {
+                    // Cretonne has no isub_imm; it uses iadd_imm with a
+                    // negated immediate instead.
+                    let raw_rhs: i64 = rhs_imm.into();
+                    builder.ins().iadd_imm(
+                        lhs,
+                        ir::immediates::Imm64::from(
+                            raw_rhs.wrapping_neg(),
+                        ),
+                    )
+                }
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMMul => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().imul(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().imul(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().imul_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSDiv => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().sdiv(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().sdiv(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().sdiv_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMUDiv => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().udiv(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().udiv(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().udiv_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSRem => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().srem(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().srem(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().srem_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMURem => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().urem(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().urem(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().urem_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMAShr => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().sshr(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().sshr(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().sshr_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMLShr => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().ushr(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().ushr(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().ushr_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMShl => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().ishl(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().ishl(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().ishl_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMAnd => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().band(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().band(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().band_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMOr => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().bor(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().bor(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().bor_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMXor => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().bxor(lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().bxor(lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().bxor_imm(lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFAdd => {
@@ -156,9 +205,13 @@ pub fn translate_inst(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMICmp => {
-            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            let condcode = unsafe { LLVMGetICmpPredicate(llvm_inst) };
-            let result = builder.ins().icmp(translate_icmp_code(condcode), lhs, rhs);
+            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
+            let llvm_condcode = unsafe { LLVMGetICmpPredicate(llvm_inst) };
+            let condcode = translate_icmp_code(llvm_condcode);
+            let result = match rhs {
+                RegOrImm::Reg(reg) => builder.ins().icmp(condcode, lhs, reg),
+                RegOrImm::Imm(imm) => builder.ins().icmp_imm(condcode, lhs, imm),
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFCmp => {
@@ -1271,6 +1324,43 @@ fn unary_operands(
         value_map,
         data_layout,
     )
+}
+
+enum RegOrImm {
+    Reg(ir::Value),
+    Imm(ir::immediates::Imm64),
+}
+
+/// Translate the operands for a binary operation taking one register and
+/// one operand which may be either a register or an immediate.
+///
+/// Using the `*_imm` forms of instructions isn't necessary, as Cretonne
+/// should fold constants into immediates just as well, but doing it in
+/// translation makes the output tidier and exercises more of the
+/// builder API.
+fn binary_operands_r_ri(
+    llvm_inst: LLVMValueRef,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+    value_map: &mut HashMap<LLVMValueRef, Variable>,
+    data_layout: LLVMTargetDataRef,
+) -> (ir::Value, RegOrImm) {
+    let lhs = use_val(
+        unsafe { LLVMGetOperand(llvm_inst, 0) },
+        builder,
+        value_map,
+        data_layout,
+    );
+
+    let llvm_rhs = unsafe { LLVMGetOperand(llvm_inst, 1) };
+    let rhs = if unsafe { LLVMIsConstant(llvm_rhs) } != 0 {
+        RegOrImm::Imm(ir::immediates::Imm64::from(
+            unsafe { LLVMConstIntGetZExtValue(llvm_rhs) } as i64,
+        ))
+    } else {
+        RegOrImm::Reg(use_val(llvm_rhs, builder, value_map, data_layout))
+    };
+
+    (lhs, rhs)
 }
 
 /// Translate the operands for a binary operation.

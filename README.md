@@ -32,13 +32,11 @@ function %foo(i32, i32) native {
     fn0 = sig0 %bar
 
 ebb1(v0: i32, v1: i32):
-    v2 = iconst.i32 4
-    v3 = icmp ult v0, v2
-    v4 = iconst.i32 0
-    v5 = icmp eq v1, v4
-    v6 = bor v5, v3
-    brz v6, ebb0
-    v7 = call fn0()
+    v2 = icmp_imm ult v0, 4
+    v3 = icmp_imm eq v1, 0
+    v4 = bor v3, v2
+    brz v4, ebb0
+    v5 = call fn0()
     return
 
 ebb0:
@@ -73,8 +71,8 @@ implemented include:
  - Optimize @llvm.memcpy et al for small and/or aligned cases.
  - Optimize switch for small, sparse, and/or other special cases.
  - Pattern-match operations that are not present in LLVM IR, such as
-   rotates, `*_imm` operations, load/store offsets, wrapping/extending
-   loads and stores, `br_icmp`, etc.
+   rotates, load/store offsets, wrapping/extending loads and stores,
+   `br_icmp`, etc.
  - Expand @llvm.powi with small integer constants into efficient sequences.
 
 Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
