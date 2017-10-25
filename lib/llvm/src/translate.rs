@@ -269,7 +269,7 @@ pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
         16 => ir::types::I16,
         32 => ir::types::I32,
         64 => ir::types::I64,
-        width @ _ => panic!("unimplemented integer bit width {}", width),
+        width => panic!("unimplemented integer bit width {}", width),
     }
 }
 
@@ -330,7 +330,7 @@ pub fn translate_sig(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> ir
     let mut returns: Vec<ir::AbiParam> = Vec::with_capacity(1);
     match translate_type(unsafe { LLVMGetReturnType(llvm_ty) }, data_layout) {
         ir::types::VOID => {}
-        ty @ _ => returns.push(ir::AbiParam::new(ty)),
+        ty => returns.push(ir::AbiParam::new(ty)),
     }
     sig.returns = returns;
 
