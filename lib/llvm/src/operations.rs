@@ -2,10 +2,14 @@
 //!
 //! TODO: switch with non-sequential cases, first-class aggregates, EH, vectors,
 //! globals, constant exprs, function argument attributes, unusual integer sizes,
-//! debug info, indirectbr, dynamic alloca, function addresses, intrinsics.
+//! debug info, indirectbr, dynamic alloca, function addresses, various
+//! intrinsics, atomics.
 //!
 //! TODO: Optimize switch lowering for small, sparse, or other special forms
 //! of case ranges.
+//!
+//! TODO: Optimize memcpy/etc. lowering for small, aligned, or other special
+//! forms.
 //!
 //! TODO: Optimize by pattern-matching LLVM IR rotates, *_imm operations,
 //! load/store offsets, wrapping/extending load/store, etc.?
@@ -145,6 +149,25 @@ pub fn translate_inst(
         LLVMFDiv => {
             let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
             let result = builder.ins().fdiv(lhs, rhs);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        LLVMFRem => {
+            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
+            let ty = translate_type_of(llvm_inst, data_layout);
+            let mut sig = ir::Signature::new(ir::CallConv::Native);
+            sig.params.resize(2, ir::AbiParam::new(ty));
+            sig.returns.push(ir::AbiParam::new(ty));
+            let data = ir::ExtFuncData {
+                name: ir::FunctionName::new(match ty {
+                    ir::types::F32 => "fmodf",
+                    ir::types::F64 => "fmod",
+                    _ => panic!("frem unimplemented for type {:?}", ty),
+                }),
+                signature: builder.import_signature(sig),
+            };
+            let callee = builder.import_function(data);
+            let call = builder.ins().call(callee, &[lhs, rhs]);
+            let result = builder.inst_results(call)[0];
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMICmp => {
@@ -555,8 +578,55 @@ fn translate_intrinsic(
     let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
         .expect("unimplemented: unusual function names");
     match name.as_ref() {
-        "llvm.assume" => {
+        "llvm.prefetch" |
+        "llvm.assume" |
+        "llvm.lifetime.start.p0i8" |
+        "llvm.lifetime.end.p0i8" |
+        "llvm.invariant.start.p0i8" |
+        "llvm.invariant.end.p0i8" |
+        "llvm.sideeffect" => {
             // For now, just discard this informtion.
+        }
+        "llvm.invariant.group.barrier" => {
+            // For now, just discard this informtion.
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            def_val(llvm_inst, op, builder, value_map, data_layout);
+        }
+        "llvm.expect.i1" |
+        "llvm.expect.i8" |
+        "llvm.expect.i16" |
+        "llvm.expect.i32" |
+        "llvm.expect.i64" => {
+            // For now, just discard this informtion.
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            def_val(llvm_inst, op, builder, value_map, data_layout);
+        }
+        "llvm.objectsize.i8.p0i8" |
+        "llvm.objectsize.i16.p0i8" |
+        "llvm.objectsize.i32.p0i8" |
+        "llvm.objectsize.i64.p0i8" => {
+            let min = unsafe { LLVMConstIntGetZExtValue(LLVMGetOperand(llvm_inst, 1)) } != 0;
+            let result = builder.ins().iconst(
+                translate_type_of(llvm_inst, data_layout),
+                ir::immediates::Imm64::new(if min { 0 } else { -1 }),
+            );
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.sqrt.f32" | "llvm.sqrt.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().sqrt(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.fabs.f32" | "llvm.fabs.f64" => {
+            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().fabs(op);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.copysign.f32" |
+        "llvm.copysign.f64" => {
+            let (lhs, rhs) = binary_operands(llvm_inst, builder, value_map, data_layout);
+            let result = builder.ins().fcopysign(lhs, rhs);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         "llvm.ceil.f32" | "llvm.ceil.f64" => {
             let op = unary_operands(llvm_inst, builder, value_map, data_layout);
@@ -599,6 +669,55 @@ fn translate_intrinsic(
         }
         "llvm.debugtrap" => {
             builder.ins().trap(ir::TrapCode::User(2));
+        }
+        "llvm.fmuladd.f32" |
+        "llvm.fmuladd.f64" => {
+            // Cretonne currently has no fma instruction, so just lower these
+            // as non-fused operations.
+            let (a, b, c) = ternary_operands(llvm_inst, builder, value_map, data_layout);
+            let t = builder.ins().fmul(a, b);
+            let result = builder.ins().fadd(t, c);
+            def_val(llvm_inst, result, builder, value_map, data_layout);
+        }
+        "llvm.minnum.f32" => {
+            translate_intr_libcall(
+                "fminf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.minnum.f64" => {
+            translate_intr_libcall(
+                "fmin",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.maxnum.f32" => {
+            translate_intr_libcall(
+                "fmaxf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.maxnum.f64" => {
+            translate_intr_libcall(
+                "fmax",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
         }
         "llvm.sin.f32" => {
             translate_intr_libcall(
@@ -680,6 +799,26 @@ fn translate_intrinsic(
                 data_layout,
             )
         }
+        "llvm.exp2.f32" => {
+            translate_intr_libcall(
+                "exp2f",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.exp2.f64" => {
+            translate_intr_libcall(
+                "exp2",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
         "llvm.log.f32" => {
             translate_intr_libcall(
                 "logf",
@@ -740,6 +879,88 @@ fn translate_intrinsic(
                 data_layout,
             )
         }
+        "llvm.pow.f32" => {
+            translate_intr_libcall(
+                "powf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.pow.f64" => {
+            translate_intr_libcall(
+                "pow",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.rint.f32" => {
+            translate_intr_libcall(
+                "rintf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.rint.f64" => {
+            translate_intr_libcall(
+                "rint",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.round.f32" => {
+            translate_intr_libcall(
+                "roundf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.round.f64" => {
+            translate_intr_libcall(
+                "round",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.fma.f32" => {
+            translate_intr_libcall(
+                "fmaf",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.fma.f64" => {
+            translate_intr_libcall(
+                "fma",
+                llvm_inst,
+                llvm_callee,
+                builder,
+                value_map,
+                data_layout,
+            )
+        }
+        "llvm.memcpy.p0i8.p0i8.i8" |
+        "llvm.memcpy.p0i8.p0i8.i16" |
         "llvm.memcpy.p0i8.p0i8.i32" |
         "llvm.memcpy.p0i8.p0i8.i64" => {
             translate_mem_intrinsic(
@@ -751,6 +972,8 @@ fn translate_intrinsic(
                 data_layout,
             )
         }
+        "llvm.memmove.p0i8.p0i8.i8" |
+        "llvm.memmove.p0i8.p0i8.i16" |
         "llvm.memmove.p0i8.p0i8.i32" |
         "llvm.memmove.p0i8.p0i8.i64" => {
             translate_mem_intrinsic(
@@ -762,6 +985,8 @@ fn translate_intrinsic(
                 data_layout,
             )
         }
+        "llvm.memset.p0i8.i8" |
+        "llvm.memset.p0i8.i16" |
         "llvm.memset.p0i8.i32" |
         "llvm.memset.p0i8.i64" => {
             translate_mem_intrinsic(
@@ -774,7 +999,7 @@ fn translate_intrinsic(
             )
         }
         _ => {
-            panic!("unsupported: intrinsic: {}", name);
+            panic!("unimplemented: intrinsic: {}", name);
         }
     }
 }
