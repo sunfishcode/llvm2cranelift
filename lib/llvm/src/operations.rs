@@ -587,11 +587,7 @@ fn translate_intrinsic(
         "llvm.sideeffect" => {
             // For now, just discard this informtion.
         }
-        "llvm.invariant.group.barrier" => {
-            // For now, just discard this informtion.
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            def_val(llvm_inst, op, builder, value_map, data_layout);
-        }
+        "llvm.invariant.group.barrier" |
         "llvm.expect.i1" |
         "llvm.expect.i8" |
         "llvm.expect.i16" |
