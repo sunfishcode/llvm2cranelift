@@ -392,8 +392,8 @@ pub fn translate_inst(
             }
             let stack_slot_data = ir::StackSlotData::new(ir::StackSlotKind::Local, size as u32);
             let stack_slot = builder.create_stack_slot(stack_slot_data);
-            let ptr_type = translate_pointer_type(data_layout);
-            let result = builder.ins().stack_addr(ptr_type, stack_slot, 0);
+            let pointer_type = translate_pointer_type(data_layout);
+            let result = builder.ins().stack_addr(pointer_type, stack_slot, 0);
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMGetElementPtr => {
