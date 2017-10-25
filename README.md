@@ -1,13 +1,85 @@
 # llvm2cretonne
 LLVM IR to Cretonne translator
 
-This is a work in progress which currently is just complete enough
-to be usable as a testing and demonstration tool.
+This is a work in progress which currently is complete enough to be usable as a
+testing and demonstration tool. It supports all the basic integer, floating-point
+control flow, call, and memory operations, and more.
 
-Since it operates directly on LLVM IR, it doesn't use LLVM's legalization
-framework. Some esoteric LLVM IR features, such as non-power-of-two integer
-types (which do appear in clang-generated code) may be complicated to
-support.
+Here's a quick example of it in action:
+
+```
+$ cat test.ll
+define void @foo(i32 %arg, i32 %arg1) {
+bb:
+  %tmp = icmp ult i32 %arg, 4
+  %tmp2 = icmp eq i32 %arg1, 0
+  %tmp3 = or i1 %tmp2, %tmp
+  br i1 %tmp3, label %bb4, label %bb6
+
+bb4:
+  %tmp5 = call i32 @bar()
+  ret void
+
+bb6:
+  ret void
+}
+
+declare i32 @bar()
+
+$ llvm2cretonne test.ll
+function %foo(i32, i32) native {
+    sig0 = () -> i32 native
+    fn0 = sig0 %bar
+
+ebb1(v0: i32, v1: i32):
+    v2 = iconst.i32 4
+    v3 = icmp ult v0, v2
+    v4 = iconst.i32 0
+    v5 = icmp eq v1, v4
+    v6 = bor v5, v3
+    brz v6, ebb0
+    v7 = call fn0()
+    return
+
+ebb0:
+    return
+}
+```
+
+Features not yet implemented, but which could be reasonably implemented include:
+ - switch instructions with non-sequential cases
+ - first-class aggregates
+ - SIMD types and operations
+ - ConstantExprs
+ - most function argument attributes
+
+Features not yet implemented that would require features that Cretonne does not
+yet fully implement include:
+ - global variables and aliases
+ - exception handling (invoke, landingpad, etc.)
+ - debug info
+ - indirectbr
+ - dynamic alloca
+ - atomic operations
+ - volatile operations
+ - integer types with unusual sizes
+ - inline asm
+ - GC hooks
+ - varargs
+
+Optimizations that are commonly done for LLVM IR during codegen that aren't yet
+implemented include:
+ - Optimize @llvm.memcpy et al for small and/or aligned cases.
+ - Optimize switch for small, sparse, and/or other special cases.
+ - Pattern-match operations that are not present in LLVM IR, such as
+   rotates, `*_imm` operations, load/store offsets, wrapping/extending
+   loads and stores, `br_icmp`, etc.
+
+Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
+SSA defs directly into Cretonne; it instead just reports uses and defs to
+Cretonne's SSA builder, which then builds its own SSA form. That simplifies
+handling of basic blocks that aren't in RPO -- in layout order, we may see uses
+before we see their defs.
 
 ## License
 

@@ -1,13 +1,4 @@
 //! Translation from LLVM IR to Cretonne IL.
-//!
-//! It is very incomplete, currently just enough to exercise some interesting
-//! APIs.
-//!
-//! It doesn't translate LLVM's PHIs, SSA uses, and SSA defs directly into
-//! Cretonne; it instead just relies on Cretonne's SSA builder to reconstruct
-//! what it needs. That simplifies handling of basic blocks that aren't in
-//! RPO -- walking the blocks in layout order, we may see uses before we see
-//! their defs.
 
 use cretonne;
 use cretonne::ir;
@@ -115,23 +106,27 @@ pub fn read_llvm(ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, Strin
 }
 
 /// Translate an LLVM module into Cretonne IL.
-pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<(), String> {
+pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<Vec<ir::Function>, String> {
+    // TODO: Use a more sophisticated API rather than just stuffing all
+    // the functions into a Vec.
+    let mut results = Vec::new();
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     let data_layout = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
     while !llvm_func.is_null() {
         if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
-            translate_function(llvm_func, data_layout)?;
+            results.push(translate_function(llvm_func, data_layout)?);
         }
         llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
     }
-    Ok(())
+    Ok(results)
 }
 
 /// Translate the contents of `llvm_func` to Cretonne IL.
 pub fn translate_function(
     llvm_func: LLVMValueRef,
     data_layout: LLVMTargetDataRef,
-) -> Result<(), String> {
+) -> Result<ir::Function, String> {
+    // TODO: Reuse the context between separate invocations.
     let mut ctx = cretonne::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
     ctx.func.name = translate_function_name(llvm_name)?;
@@ -172,13 +167,14 @@ pub fn translate_function(
         }
     }
 
-    // For now, just print and verify the result.
-    println!("{}", ctx.func.display(None));
+    // TODO: Make the flags configurable.
+    // TODO: This verification pass may be redundant in some settings.
     let flags = settings::Flags::new(&settings::builder());
     ctx.verify_if(&flags).map_err(
         |err| err.description().to_string(),
     )?;
-    Ok(())
+
+    Ok((ctx.func))
 }
 
 /// Since LLVM's C API doesn't expose predecessor accessors, we make a prepass

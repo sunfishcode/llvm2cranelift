@@ -1,18 +1,4 @@
 //! Translation from LLVM IR operations to Cretonne IL instructions.
-//!
-//! TODO: switch with non-sequential cases, first-class aggregates, EH, vectors,
-//! globals, constant exprs, function argument attributes, unusual integer sizes,
-//! debug info, indirectbr, dynamic alloca, function addresses, various
-//! intrinsics, atomics.
-//!
-//! TODO: Optimize switch lowering for small, sparse, or other special forms
-//! of case ranges.
-//!
-//! TODO: Optimize memcpy/etc. lowering for small, aligned, or other special
-//! forms.
-//!
-//! TODO: Optimize by pattern-matching LLVM IR rotates, *_imm operations,
-//! load/store offsets, wrapping/extending load/store, etc.?
 
 use cretonne::ir::{self, InstBuilder};
 use cton_frontend;
@@ -573,6 +559,8 @@ fn translate_intrinsic(
     let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
         .expect("unimplemented: unusual function names");
     match name.as_ref() {
+        "llvm.dbg.declare" |
+        "llvm.dbg.value" |
         "llvm.prefetch" |
         "llvm.assume" |
         "llvm.lifetime.start.p0i8" |

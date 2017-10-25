@@ -71,7 +71,10 @@ fn handle_module(
     terminal.reset().unwrap();
     let ctx = create_llvm_context();
     let module = read_llvm(ctx, path.to_str().ok_or_else(|| "invalid utf8 in path")?)?;
-    translate_module(module)?;
+    for func in translate_module(module)? {
+        // For now, just print the result.
+        println!("{}", func.display(None));
+    }
     terminal.fg(term::color::GREEN).unwrap();
     vprintln!(flag_verbose, "ok");
     terminal.reset().unwrap();
