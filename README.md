@@ -2,7 +2,12 @@
 LLVM IR to Cretonne translator
 
 This is a work in progress which currently is just complete enough
-to be usable as a testing tool.
+to be usable as a testing and demonstration tool.
+
+Since it operates directly on LLVM IR, it doesn't use LLVM's legalization
+framework. Some esoteric LLVM IR features, such as non-power-of-two integer
+types (which do appear in clang-generated code) may be complicated to
+support.
 
 ## License
 
