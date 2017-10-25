@@ -118,7 +118,7 @@ pub fn read_llvm(ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, Strin
 pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<(), String> {
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     let data_layout = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
-    while llvm_func != ptr::null_mut() {
+    while !llvm_func.is_null() {
         if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
             translate_function(llvm_func, data_layout)?;
         }
@@ -151,7 +151,7 @@ pub fn translate_function(
         // Make a pre-pass through the basic blocks to collect predecessor
         // information, which LLVM's C API doesn't expose directly.
         let mut llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
-        while llvm_bb != ptr::null_mut() {
+        while !llvm_bb.is_null() {
             prepare_for_bb(llvm_bb, &mut builder, &mut ebb_info, &mut ebb_map);
             llvm_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
         }
@@ -159,7 +159,7 @@ pub fn translate_function(
         // Translate the contents of each basic block.
         let mut entry_block = true;
         llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
-        while llvm_bb != ptr::null_mut() {
+        while !llvm_bb.is_null() {
             translate_bb(
                 llvm_func,
                 llvm_bb,
@@ -193,7 +193,7 @@ fn prepare_for_bb(
     ebb_map: &mut HashMap<LLVMBasicBlockRef, ir::Ebb>,
 ) {
     let term = unsafe { LLVMGetBasicBlockTerminator(llvm_bb) };
-    let is_switch = unsafe { LLVMIsASwitchInst(term) } != ptr::null_mut();
+    let is_switch = !unsafe { LLVMIsASwitchInst(term) }.is_null();
     let num_succs = unsafe { LLVMGetNumSuccessors(term) };
     for i in 0..num_succs {
         let llvm_succ = unsafe { LLVMGetSuccessor(term, i) };
@@ -239,7 +239,7 @@ fn translate_bb(
 
     // Translate each regular instruction.
     let mut llvm_inst = unsafe { LLVMGetFirstInstruction(llvm_bb) };
-    while llvm_inst != ptr::null_mut() {
+    while !llvm_inst.is_null() {
         translate_inst(llvm_bb, llvm_inst, builder, value_map, ebb_map, data_layout);
         llvm_inst = unsafe { LLVMGetNextInstruction(llvm_inst) };
     }

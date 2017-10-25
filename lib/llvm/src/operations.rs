@@ -1100,7 +1100,7 @@ fn handle_phi_operands(
     let mut defs = Vec::new();
 
     let mut llvm_inst = unsafe { LLVMGetFirstInstruction(llvm_succ) };
-    while llvm_inst != ptr::null_mut() {
+    while !llvm_inst.is_null() {
         if let LLVMPHI = unsafe { LLVMGetInstructionOpcode(llvm_inst) } {
             // TODO: We'd really want getBasicBlockIndex or getIncomingValueForBlock
             // here, but LLVM's C API doesn't expose those currently.
