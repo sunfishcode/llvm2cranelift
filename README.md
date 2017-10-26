@@ -75,6 +75,8 @@ implemented include:
    `br_icmp`, etc.
  - Expand @llvm.powi with small integer constants into efficient sequences.
  - Reassociate GEP indices to enable constant folding.
+ - Handling of i1 is suboptimal in cases like zext(load(p)) because the result
+   of the load is converted to boolean and then converted back.
 
 Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
 SSA defs directly into Cretonne; it instead just reports uses and defs to

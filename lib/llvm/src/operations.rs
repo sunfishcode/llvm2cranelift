@@ -52,21 +52,21 @@ pub fn translate_inst(
             // Nothing to do. Phis are handled elsewhere.
         }
         LLVMAdd => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().iadd(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().iadd_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) => builder.ins().bxor(lhs, rhs),
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().iadd(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().iadd_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSub => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(rhs_reg) => builder.ins().isub(lhs, rhs_reg),
-                RegOrImm::Imm(rhs_imm) => {
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) => builder.ins().bxor_not(lhs, rhs),
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().isub(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => {
                     // Cretonne has no isub_imm; it uses iadd_imm with a
                     // negated immediate instead.
-                    let raw_rhs: i64 = rhs_imm.into();
+                    let raw_rhs: i64 = rhs.into();
                     builder.ins().iadd_imm(
                         lhs,
                         ir::immediates::Imm64::from(
@@ -78,90 +78,100 @@ pub fn translate_inst(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMMul => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().imul(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().imul_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) => builder.ins().band(lhs, rhs),
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().imul(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().imul_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSDiv => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().sdiv(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().sdiv_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, _rhs) => lhs,
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().sdiv(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().sdiv_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMUDiv => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().udiv(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().udiv_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, _rhs) => lhs,
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().udiv(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().udiv_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSRem => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().srem(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().srem_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(_lhs, _rhs) => {
+                    builder.ins().bconst(
+                        translate_type_of(llvm_inst, data_layout),
+                        false,
+                    )
+                }
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().srem(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().srem_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMURem => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().urem(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().urem_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(_lhs, _rhs) => {
+                    builder.ins().bconst(
+                        translate_type_of(llvm_inst, data_layout),
+                        false,
+                    )
+                }
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().urem(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().urem_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMAShr => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().sshr(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().sshr_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, _rhs) => lhs,
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().sshr(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().sshr_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMLShr => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().ushr(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().ushr_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, _rhs) => lhs,
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().ushr(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().ushr_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMShl => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().ishl(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().ishl_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, _rhs) => lhs,
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().ishl(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().ishl_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMAnd => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().band(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().band_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) |
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().band(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().band_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMOr => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().bor(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().bor_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) |
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().bor(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().bor_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMXor => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().bxor(lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().bxor_imm(lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) |
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().bxor(lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().bxor_imm(lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
@@ -205,12 +215,12 @@ pub fn translate_inst(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMICmp => {
-            let (lhs, rhs) = binary_operands_r_ri(llvm_inst, builder, value_map, data_layout);
             let llvm_condcode = unsafe { LLVMGetICmpPredicate(llvm_inst) };
             let condcode = translate_icmp_code(llvm_condcode);
-            let result = match rhs {
-                RegOrImm::Reg(reg) => builder.ins().icmp(condcode, lhs, reg),
-                RegOrImm::Imm(imm) => builder.ins().icmp_imm(condcode, lhs, imm),
+            let result = match binary_operands_r_ri(llvm_inst, builder, value_map, data_layout) {
+                RegImmOperands::Bool(lhs, rhs) => translate_bool_cmp(condcode, lhs, rhs, builder),
+                RegImmOperands::RegReg(lhs, rhs) => builder.ins().icmp(condcode, lhs, rhs),
+                RegImmOperands::RegImm(lhs, rhs) => builder.ins().icmp_imm(condcode, lhs, rhs),
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
@@ -224,26 +234,12 @@ pub fn translate_inst(
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
-        LLVMTrunc => {
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().ireduce(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
-            def_val(llvm_inst, result, builder, value_map, data_layout);
-        }
-        LLVMZExt => {
+        LLVMTrunc | LLVMZExt => {
             let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
             let op = use_val(llvm_op, builder, value_map, data_layout);
             let from = translate_type_of(llvm_op, data_layout);
             let to = translate_type_of(llvm_inst, data_layout);
-            let result = if from.is_int() {
-                builder.ins().uextend(to, op)
-            } else if from.is_bool() {
-                builder.ins().bint(to, op)
-            } else {
-                panic!("unexpected zext operand type")
-            };
+            let result = unsigned_cast(from, to, op, builder);
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSExt => {
@@ -251,45 +247,67 @@ pub fn translate_inst(
             let op = use_val(llvm_op, builder, value_map, data_layout);
             let from = translate_type_of(llvm_op, data_layout);
             let to = translate_type_of(llvm_inst, data_layout);
-            let result = if from.is_int() {
-                builder.ins().sextend(to, op)
-            } else if from.is_bool() {
+            let result = if from.is_bool() {
                 builder.ins().bmask(to, op)
             } else {
-                panic!("unexpected sext operand type")
+                builder.ins().sextend(to, op)
             };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFPToSI => {
             let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().fcvt_to_sint(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let ty = translate_type_of(llvm_inst, data_layout);
+            let result = if ty.is_bool() {
+                let sint = builder.ins().fcvt_to_sint(ir::types::I32, op);
+                builder.ins().icmp_imm(
+                    ir::condcodes::IntCC::NotEqual,
+                    sint,
+                    0,
+                )
+            } else {
+                builder.ins().fcvt_to_sint(ty, op)
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFPToUI => {
             let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().fcvt_to_uint(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let ty = translate_type_of(llvm_inst, data_layout);
+            let result = if ty.is_bool() {
+                let uint = builder.ins().fcvt_to_uint(ir::types::I32, op);
+                builder.ins().icmp_imm(
+                    ir::condcodes::IntCC::NotEqual,
+                    uint,
+                    0,
+                )
+            } else {
+                builder.ins().fcvt_to_uint(ty, op)
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSIToFP => {
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().fcvt_from_sint(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
+            let op = use_val(llvm_op, builder, value_map, data_layout);
+            let from = translate_type_of(llvm_op, data_layout);
+            let to = translate_type_of(llvm_inst, data_layout);
+            let result = if from.is_bool() {
+                let sint = builder.ins().bmask(ir::types::I32, op);
+                builder.ins().fcvt_from_sint(to, sint)
+            } else {
+                builder.ins().fcvt_from_sint(to, op)
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMUIToFP => {
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().fcvt_from_uint(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
+            let op = use_val(llvm_op, builder, value_map, data_layout);
+            let from = translate_type_of(llvm_op, data_layout);
+            let to = translate_type_of(llvm_inst, data_layout);
+            let result = if from.is_bool() {
+                let uint = builder.ins().bint(ir::types::I32, op);
+                builder.ins().fcvt_from_uint(to, uint)
+            } else {
+                builder.ins().fcvt_from_uint(to, op)
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFPTrunc => {
@@ -315,7 +333,7 @@ pub fn translate_inst(
             let to = translate_type_of(llvm_inst, data_layout);
             let result = if from == to {
                 // No-op bitcast.
-                use_val(llvm_op, builder, value_map, data_layout)
+                op
             } else {
                 builder.ins().bitcast(to, op)
             };
@@ -326,14 +344,7 @@ pub fn translate_inst(
             let op = use_val(llvm_op, builder, value_map, data_layout);
             let from = translate_type_of(llvm_op, data_layout);
             let to = translate_type_of(llvm_inst, data_layout);
-            let result = if from == to {
-                // No-op cast.
-                use_val(llvm_op, builder, value_map, data_layout)
-            } else if from.bits() > to.bits() {
-                builder.ins().ireduce(to, op)
-            } else {
-                builder.ins().uextend(to, op)
-            };
+            let result = unsigned_cast(from, to, op, builder);
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSelect => {
@@ -345,19 +356,26 @@ pub fn translate_inst(
             let llvm_ty = unsafe { LLVMTypeOf(llvm_inst) };
             let flags = translate_memflags(llvm_inst, llvm_ty, data_layout);
             let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().load(
-                translate_type(llvm_ty, data_layout),
-                flags,
-                op,
-                0,
-            );
+            let ty = translate_type(llvm_ty, data_layout);
+            let result = if ty.is_bool() {
+                let load = builder.ins().load(ir::types::I8, flags, op, 0);
+                unsigned_cast(ir::types::I8, ty, load, builder)
+            } else {
+                builder.ins().load(ty, flags, op, 0)
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMStore => {
-            let llvm_ty = unsafe { LLVMTypeOf(llvm_inst) };
+            let llvm_ty = unsafe { LLVMTypeOf(LLVMGetOperand(llvm_inst, 0)) };
             let flags = translate_memflags(llvm_inst, llvm_ty, data_layout);
             let (val, ptr) = binary_operands(llvm_inst, builder, value_map, data_layout);
-            builder.ins().store(flags, val, ptr, 0);
+            let ty = translate_type(llvm_ty, data_layout);
+            let store_val = if ty.is_bool() {
+                unsigned_cast(ty, ir::types::I8, val, builder)
+            } else {
+                val
+            };
+            builder.ins().store(flags, store_val, ptr, 0);
         }
         LLVMBr => {
             if unsafe { LLVMIsConditional(llvm_inst) } != 0 {
@@ -420,8 +438,15 @@ pub fn translate_inst(
                 data.push_entry(ebb_map[&llvm_case]);
             }
             let jt = builder.create_jump_table(data);
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            builder.ins().br_table(op, jt);
+            let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
+            let op = use_val(llvm_op, builder, value_map, data_layout);
+            let op_ty = translate_type_of(llvm_op, data_layout);
+            let index = if op_ty.is_bool() {
+                unsigned_cast(op_ty, ir::types::I8, op, builder)
+            } else {
+                op
+            };
+            builder.ins().br_table(index, jt);
             let llvm_default = unsafe { LLVMGetSwitchDefaultDest(llvm_inst) };
             jump(
                 llvm_bb,
@@ -553,9 +578,7 @@ pub fn translate_inst(
         LLVMUnreachable => {
             builder.ins().trap(ir::TrapCode::User(0));
         }
-        _ => {
-            panic!("unimplemented opcode: {:?}", llvm_opcode);
-        }
+        _ => panic!("unimplemented opcode: {:?}", llvm_opcode),
     }
 }
 
@@ -625,14 +648,10 @@ fn materialize_constant(
                         unsafe { mem::transmute(val) },
                     ))
                 }
-                ty => {
-                    panic!("unimplemented floating-point constant type: {}", ty);
-                }
+                ty => panic!("unimplemented floating-point constant type: {}", ty),
             }
         }
-        _ => {
-            panic!("unimplemented constant kind: {:?}", llvm_kind);
-        }
+        _ => panic!("unimplemented constant kind: {:?}", llvm_kind),
     }
 }
 
@@ -1054,44 +1073,21 @@ fn translate_intrinsic(
         "llvm.memcpy.p0i8.p0i8.i16" |
         "llvm.memcpy.p0i8.p0i8.i32" |
         "llvm.memcpy.p0i8.p0i8.i64" => {
-            translate_mem_intrinsic(
-                "memcpy",
-                llvm_inst,
-                llvm_callee,
-                builder,
-                value_map,
-                data_layout,
-            )
+            translate_mem_intrinsic("memcpy", llvm_inst, builder, value_map, data_layout)
         }
         "llvm.memmove.p0i8.p0i8.i8" |
         "llvm.memmove.p0i8.p0i8.i16" |
         "llvm.memmove.p0i8.p0i8.i32" |
         "llvm.memmove.p0i8.p0i8.i64" => {
-            translate_mem_intrinsic(
-                "memmove",
-                llvm_inst,
-                llvm_callee,
-                builder,
-                value_map,
-                data_layout,
-            )
+            translate_mem_intrinsic("memmove", llvm_inst, builder, value_map, data_layout)
         }
         "llvm.memset.p0i8.i8" |
         "llvm.memset.p0i8.i16" |
         "llvm.memset.p0i8.i32" |
         "llvm.memset.p0i8.i64" => {
-            translate_mem_intrinsic(
-                "memset",
-                llvm_inst,
-                llvm_callee,
-                builder,
-                value_map,
-                data_layout,
-            )
+            translate_mem_intrinsic("memset", llvm_inst, builder, value_map, data_layout)
         }
-        _ => {
-            panic!("unimplemented: intrinsic: {}", name);
-        }
+        _ => panic!("unimplemented: intrinsic: {}", name),
     }
 }
 
@@ -1137,49 +1133,52 @@ fn translate_intr_libcall(
 fn translate_mem_intrinsic(
     name: &str,
     llvm_inst: LLVMValueRef,
-    llvm_callee: LLVMValueRef,
     builder: &mut cton_frontend::FunctionBuilder<Variable>,
     value_map: &mut HashMap<LLVMValueRef, Variable>,
     data_layout: LLVMTargetDataRef,
 ) {
     let pointer_type = translate_pointer_type(data_layout);
-    let llvm_len_arg = unsafe { LLVMGetOperand(llvm_inst, 2) };
-    let mut len_arg = use_val(llvm_len_arg, builder, value_map, data_layout);
-    let orig_type = translate_type_of(llvm_len_arg, data_layout);
-    if orig_type != pointer_type {
-        if orig_type.bits() > pointer_type.bits() {
-            len_arg = builder.ins().ireduce(pointer_type, len_arg)
-        } else if orig_type.bits() < pointer_type.bits() {
-            len_arg = builder.ins().uextend(pointer_type, len_arg)
-        }
-    }
-    let args = [
-        use_val(
-            unsafe { LLVMGetOperand(llvm_inst, 0) },
-            builder,
-            value_map,
-            data_layout,
-        ),
-        use_val(
-            unsafe { LLVMGetOperand(llvm_inst, 1) },
-            builder,
-            value_map,
-            data_layout,
-        ),
-        len_arg,
-    ];
 
-    let name = ir::FunctionName::new(name);
-    let mut sig = translate_sig(
-        unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
+    let dst_arg = use_val(
+        unsafe { LLVMGetOperand(llvm_inst, 0) },
+        builder,
+        value_map,
         data_layout,
     );
+
+    let llvm_src_arg = unsafe { LLVMGetOperand(llvm_inst, 1) };
+    let orig_src_arg = use_val(llvm_src_arg, builder, value_map, data_layout);
+    let src_arg = if name == "memset" {
+        builder.ins().uextend(ir::types::I32, orig_src_arg)
+    } else {
+        orig_src_arg
+    };
+
+    let llvm_len_arg = unsafe { LLVMGetOperand(llvm_inst, 2) };
+    let len_arg = unsigned_cast(
+        translate_type_of(llvm_len_arg, data_layout),
+        pointer_type,
+        use_val(llvm_len_arg, builder, value_map, data_layout),
+        builder,
+    );
+
     // Discard the alignment hint for now.
-    // This also drops the volatile flag, which is safe as long as Cretonne
-    // doesn't start optimizing these libcalls.
-    sig.params.resize(3, ir::AbiParam::new(ir::types::VOID));
+    // Discard the volatile flag too, which is safe as long as Cretonne doesn't
+    // start optimizing these libcalls.
+    let args = [dst_arg, src_arg, len_arg];
+
+    let funcname = ir::FunctionName::new(name);
+    let mut sig = ir::Signature::new(ir::CallConv::Native);
+    sig.params.resize(3, ir::AbiParam::new(pointer_type));
+    if name == "memset" {
+        sig.params[1] = ir::AbiParam::new(ir::types::I32);
+    }
+    sig.returns.resize(1, ir::AbiParam::new(pointer_type));
     let signature = builder.import_signature(sig);
-    let data = ir::ExtFuncData { name, signature };
+    let data = ir::ExtFuncData {
+        name: funcname,
+        signature,
+    };
     let callee = builder.import_function(data);
     builder.ins().call(callee, &args);
 }
@@ -1289,6 +1288,55 @@ fn jump(
     }
 }
 
+fn translate_bool_cmp(
+    condcode: ir::condcodes::IntCC,
+    lhs: ir::Value,
+    rhs: ir::Value,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+) -> ir::Value {
+    match condcode {
+        ir::condcodes::IntCC::Equal => builder.ins().bxor_not(lhs, rhs),
+        ir::condcodes::IntCC::NotEqual => builder.ins().bxor(lhs, rhs),
+        ir::condcodes::IntCC::SignedLessThan => builder.ins().band_not(lhs, rhs),
+        ir::condcodes::IntCC::SignedLessThanOrEqual => builder.ins().bor_not(lhs, rhs),
+        ir::condcodes::IntCC::SignedGreaterThan => builder.ins().band_not(rhs, lhs),
+        ir::condcodes::IntCC::SignedGreaterThanOrEqual => builder.ins().bor_not(rhs, lhs),
+        ir::condcodes::IntCC::UnsignedLessThan => builder.ins().band_not(rhs, lhs),
+        ir::condcodes::IntCC::UnsignedLessThanOrEqual => builder.ins().bor_not(rhs, lhs),
+        ir::condcodes::IntCC::UnsignedGreaterThan => builder.ins().band_not(lhs, rhs),
+        ir::condcodes::IntCC::UnsignedGreaterThanOrEqual => builder.ins().bor_not(lhs, rhs),
+    }
+}
+
+fn unsigned_cast(
+    from: ir::types::Type,
+    to: ir::types::Type,
+    op: ir::Value,
+    builder: &mut cton_frontend::FunctionBuilder<Variable>,
+) -> ir::Value {
+    if from == to {
+        // No-op cast.
+        op
+    } else if from.bits() > to.bits() {
+        if to.is_bool() {
+            let band = builder.ins().band_imm(op, 1);
+            builder.ins().icmp_imm(
+                ir::condcodes::IntCC::NotEqual,
+                band,
+                0,
+            )
+        } else {
+            builder.ins().ireduce(to, op)
+        }
+    } else {
+        if from.is_bool() {
+            builder.ins().bint(to, op)
+        } else {
+            builder.ins().uextend(to, op)
+        }
+    }
+}
+
 /// Record a "use" of an LLVM IR value.
 fn use_val(
     llvm_val: LLVMValueRef,
@@ -1347,9 +1395,13 @@ fn unary_operands(
     )
 }
 
-enum RegOrImm {
-    Reg(ir::Value),
-    Imm(ir::immediates::Imm64),
+/// A boolean operation with two register inputs, an integer operation
+/// with two register operands, or an integer operation with a register
+/// operand and an immediate operand.
+enum RegImmOperands {
+    Bool(ir::Value, ir::Value),
+    RegReg(ir::Value, ir::Value),
+    RegImm(ir::Value, ir::immediates::Imm64),
 }
 
 /// Translate the operands for a binary operation taking one register and
@@ -1364,7 +1416,10 @@ fn binary_operands_r_ri(
     builder: &mut cton_frontend::FunctionBuilder<Variable>,
     value_map: &mut HashMap<LLVMValueRef, Variable>,
     data_layout: LLVMTargetDataRef,
-) -> (ir::Value, RegOrImm) {
+) -> RegImmOperands {
+    // For most instructions, we don't need to check whether the lhs is
+    // a constant, because constants are canonicalized the the rhs when
+    // possible.
     let lhs = use_val(
         unsafe { LLVMGetOperand(llvm_inst, 0) },
         builder,
@@ -1372,16 +1427,20 @@ fn binary_operands_r_ri(
         data_layout,
     );
 
+    // Optimize the rhs if it's a constant and not boolean, since Cretonne's
+    // `*_imm` instructions don't support boolean types.
     let llvm_rhs = unsafe { LLVMGetOperand(llvm_inst, 1) };
-    let rhs = if unsafe { LLVMIsConstant(llvm_rhs) } != 0 {
-        RegOrImm::Imm(ir::immediates::Imm64::from(
-            unsafe { LLVMConstIntGetZExtValue(llvm_rhs) } as i64,
-        ))
+    let llvm_rhs_type = unsafe { LLVMTypeOf(llvm_rhs) };
+    if unsafe { LLVMGetIntTypeWidth(llvm_rhs_type) } == 1 {
+        RegImmOperands::Bool(lhs, use_val(llvm_rhs, builder, value_map, data_layout))
+    } else if unsafe { LLVMIsConstant(llvm_rhs) } != 0 {
+        RegImmOperands::RegImm(
+            lhs,
+            ir::immediates::Imm64::from(unsafe { LLVMConstIntGetZExtValue(llvm_rhs) } as i64),
+        )
     } else {
-        RegOrImm::Reg(use_val(llvm_rhs, builder, value_map, data_layout))
-    };
-
-    (lhs, rhs)
+        RegImmOperands::RegReg(lhs, use_val(llvm_rhs, builder, value_map, data_layout))
+    }
 }
 
 /// Translate the operands for a binary operation.
