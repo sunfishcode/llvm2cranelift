@@ -483,12 +483,20 @@ pub fn translate_inst(
             def_val(llvm_inst, ptr, builder, value_map, data_layout);
         }
         LLVMCall => {
+            let num_args = unsafe { LLVMGetNumArgOperands(llvm_inst) } as usize;
             let callee_index = unsafe { LLVMGetNumOperands(llvm_inst) } - 1;
             let llvm_callee = unsafe { LLVMGetOperand(llvm_inst, callee_index as libc::c_uint) };
 
             if unsafe { LLVMGetIntrinsicID(llvm_callee) } != 0 {
                 translate_intrinsic(llvm_inst, llvm_callee, builder, value_map, data_layout);
                 return;
+            }
+
+            let llvm_functy = unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) };
+            if unsafe { LLVMIsFunctionVarArg(llvm_functy) } != 0 &&
+                unsafe { LLVMCountParamTypes(llvm_functy) } as usize != num_args
+            {
+                panic!("unimplemented: variadic arguments");
             }
 
             // Fast and cold are not ABI-exposed, so we can handle them however
@@ -503,7 +511,6 @@ pub fn translate_inst(
             // Collect the call arguments.
             // TODO: Implement ABI-exposed argument attributes such as byval,
             // signext, zeroext, inreg, inalloca, align.
-            let num_args = unsafe { LLVMGetNumArgOperands(llvm_inst) } as usize;
             let mut args = Vec::with_capacity(num_args);
             for i in 0..num_args {
                 debug_assert_eq!(i as libc::c_uint as usize, i);
@@ -514,10 +521,7 @@ pub fn translate_inst(
                     data_layout,
                 ));
             }
-            let signature = builder.import_signature(translate_sig(
-                unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
-                data_layout,
-            ));
+            let signature = builder.import_signature(translate_sig(llvm_functy, data_layout));
             let name = translate_function_name(unsafe { LLVMGetValueName(llvm_callee) })
                 .expect("unimplemented: unusual function names");
             let call = if unsafe { LLVMGetValueKind(llvm_callee) } == LLVMFunctionValueKind {
