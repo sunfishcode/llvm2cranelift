@@ -74,6 +74,7 @@ implemented include:
    rotates, load/store offsets, wrapping/extending loads and stores,
    `br_icmp`, etc.
  - Expand @llvm.powi with small integer constants into efficient sequences.
+ - Reassociate GEP indices to enable constant folding.
 
 Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
 SSA defs directly into Cretonne; it instead just reports uses and defs to
