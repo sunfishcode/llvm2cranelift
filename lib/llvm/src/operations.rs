@@ -233,19 +233,31 @@ pub fn translate_inst(
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMZExt => {
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().uextend(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
+            let op = use_val(llvm_op, builder, value_map, data_layout);
+            let from = translate_type_of(llvm_op, data_layout);
+            let to = translate_type_of(llvm_inst, data_layout);
+            let result = if from.is_int() {
+                builder.ins().uextend(to, op)
+            } else if from.is_bool() {
+                builder.ins().bint(to, op)
+            } else {
+                panic!("unexpected zext operand type")
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMSExt => {
-            let op = unary_operands(llvm_inst, builder, value_map, data_layout);
-            let result = builder.ins().sextend(
-                translate_type_of(llvm_inst, data_layout),
-                op,
-            );
+            let llvm_op = unsafe { LLVMGetOperand(llvm_inst, 0) };
+            let op = use_val(llvm_op, builder, value_map, data_layout);
+            let from = translate_type_of(llvm_op, data_layout);
+            let to = translate_type_of(llvm_inst, data_layout);
+            let result = if from.is_int() {
+                builder.ins().sextend(to, op)
+            } else if from.is_bool() {
+                builder.ins().bmask(to, op)
+            } else {
+                panic!("unexpected sext operand type")
+            };
             def_val(llvm_inst, result, builder, value_map, data_layout);
         }
         LLVMFPToSI => {
