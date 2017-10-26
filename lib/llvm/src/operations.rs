@@ -583,10 +583,15 @@ fn materialize_constant(
             }
         }
         LLVMConstantIntValueKind => {
-            builder.ins().iconst(
-                translate_type_of(llvm_val, data_layout),
-                unsafe { LLVMConstIntGetSExtValue(llvm_val) },
-            )
+            let ty = translate_type_of(llvm_val, data_layout);
+            let raw = unsafe { LLVMConstIntGetSExtValue(llvm_val) };
+            if ty.is_int() {
+                builder.ins().iconst(ty, raw)
+            } else if ty.is_bool() {
+                builder.ins().bconst(ty, raw != 0)
+            } else {
+                panic!("unexpected ConstantInt type");
+            }
         }
         LLVMConstantPointerNullValueKind => {
             builder.ins().iconst(translate_pointer_type(data_layout), 0)
