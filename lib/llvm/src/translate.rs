@@ -4,10 +4,9 @@ use cretonne;
 use cretonne::ir;
 use cretonne::settings;
 use cton_frontend;
-use std::collections::{HashMap, hash_map};
+use std::collections::hash_map;
 use std::error::Error;
 use std::str;
-use std::u32;
 use std::ptr;
 use std::ffi;
 use llvm_sys::prelude::*;
@@ -18,43 +17,7 @@ use llvm_sys::LLVMTypeKind::*;
 use libc;
 
 use operations::{translate_function_params, translate_inst};
-
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Variable(pub u32);
-impl cretonne::entity::EntityRef for Variable {
-    fn new(index: usize) -> Self {
-        debug_assert!(index < (u32::MAX as usize));
-        Variable(index as u32)
-    }
-
-    fn index(self) -> usize {
-        self.0 as usize
-    }
-}
-
-impl Variable {
-    pub fn new(i: usize) -> Self {
-        debug_assert_eq!(i as u32 as usize, i);
-        Variable(i as u32)
-    }
-}
-
-impl Default for Variable {
-    fn default() -> Self {
-        Variable(u32::MAX)
-    }
-}
-
-/// Information about Ebbs that we'll create.
-struct EbbInfo {
-    pub num_preds_left: usize,
-}
-
-impl Default for EbbInfo {
-    fn default() -> Self {
-        Self { num_preds_left: 0 }
-    }
-}
+use context::{Context, EbbInfo, Variable};
 
 /// Translate from an llvm-sys C-style string to a Rust String.
 pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String> {
@@ -79,7 +42,7 @@ pub fn create_llvm_context() -> LLVMContextRef {
 }
 
 /// Read LLVM IR (bitcode or text) from a file and return the resulting module.
-pub fn read_llvm(ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, String> {
+pub fn read_llvm(llvm_ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, String> {
     let mut msg = ptr::null_mut();
     let mut buf = ptr::null_mut();
     let c_str = ffi::CString::new(path).map_err(
@@ -94,7 +57,7 @@ pub fn read_llvm(ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, Strin
         ));
     }
     let mut module = ptr::null_mut();
-    if unsafe { LLVMParseIRInContext(ctx, buf, &mut module, &mut msg) } != 0 {
+    if unsafe { LLVMParseIRInContext(llvm_ctx, buf, &mut module, &mut msg) } != 0 {
         Err(format!(
             "error parsing LLVM IR in {}: {}",
             path,
@@ -111,10 +74,10 @@ pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<Vec<ir::Function>, St
     // the functions into a Vec.
     let mut results = Vec::new();
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
-    let data_layout = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
+    let dl = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
     while !llvm_func.is_null() {
         if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
-            results.push(translate_function(llvm_func, data_layout)?);
+            results.push(translate_function(llvm_func, dl)?);
         }
         llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
     }
@@ -124,45 +87,31 @@ pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<Vec<ir::Function>, St
 /// Translate the contents of `llvm_func` to Cretonne IL.
 pub fn translate_function(
     llvm_func: LLVMValueRef,
-    data_layout: LLVMTargetDataRef,
+    dl: LLVMTargetDataRef,
 ) -> Result<ir::Function, String> {
     // TODO: Reuse the context between separate invocations.
-    let mut ctx = cretonne::Context::new();
+    let mut cton_ctx = cretonne::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-    ctx.func.name = translate_function_name(llvm_name)?;
-    ctx.func.signature = translate_sig(
-        unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) },
-        data_layout,
-    );
+    cton_ctx.func.name = translate_function_name(llvm_name)?;
+    cton_ctx.func.signature =
+        translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
     {
         let mut il_builder = cton_frontend::ILBuilder::<Variable>::new();
-        let mut builder =
-            cton_frontend::FunctionBuilder::<Variable>::new(&mut ctx.func, &mut il_builder);
-        let mut value_map: HashMap<LLVMValueRef, Variable> = HashMap::new();
-        let mut ebb_info: HashMap<LLVMBasicBlockRef, EbbInfo> = HashMap::new();
-        let mut ebb_map: HashMap<LLVMBasicBlockRef, ir::Ebb> = HashMap::new();
+        let mut ctx = Context::new(&mut cton_ctx.func, &mut il_builder, dl);
 
         // Make a pre-pass through the basic blocks to collect predecessor
         // information, which LLVM's C API doesn't expose directly.
         let mut llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
         while !llvm_bb.is_null() {
-            prepare_for_bb(llvm_bb, &mut builder, &mut ebb_info, &mut ebb_map);
+            prepare_for_bb(llvm_bb, &mut ctx);
             llvm_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
         }
 
         // Translate the contents of each basic block.
         llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
         while !llvm_bb.is_null() {
-            translate_bb(
-                llvm_func,
-                llvm_bb,
-                &mut builder,
-                &mut value_map,
-                &mut ebb_info,
-                &mut ebb_map,
-                data_layout,
-            );
+            translate_bb(llvm_func, llvm_bb, &mut ctx);
             llvm_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
         }
     }
@@ -170,70 +119,59 @@ pub fn translate_function(
     // TODO: Make the flags configurable.
     // TODO: This verification pass may be redundant in some settings.
     let flags = settings::Flags::new(&settings::builder());
-    ctx.verify_if(&flags).map_err(
-        |err| err.description().to_string(),
-    )?;
+    cton_ctx.verify_if(&flags).map_err(|err| {
+        err.description().to_string()
+    })?;
 
-    Ok((ctx.func))
+    Ok((cton_ctx.func))
 }
 
 /// Since LLVM's C API doesn't expose predecessor accessors, we make a prepass
 /// and collect the information we need from the successor accessors.
-fn prepare_for_bb(
-    llvm_bb: LLVMBasicBlockRef,
-    builder: &mut cton_frontend::FunctionBuilder<Variable>,
-    ebb_info: &mut HashMap<LLVMBasicBlockRef, EbbInfo>,
-    ebb_map: &mut HashMap<LLVMBasicBlockRef, ir::Ebb>,
-) {
+fn prepare_for_bb(llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
     let term = unsafe { LLVMGetBasicBlockTerminator(llvm_bb) };
     let is_switch = !unsafe { LLVMIsASwitchInst(term) }.is_null();
     let num_succs = unsafe { LLVMGetNumSuccessors(term) };
     for i in 0..num_succs {
         let llvm_succ = unsafe { LLVMGetSuccessor(term, i) };
         {
-            let info = ebb_info.entry(llvm_succ).or_insert_with(EbbInfo::default);
+            let info = ctx.ebb_info.entry(llvm_succ).or_insert_with(
+                EbbInfo::default,
+            );
             info.num_preds_left += 1;
         }
         // If the block is reachable by branch (and not fallthrough), or by
         // a switch non-default edge (which can't use fallthrough), we need
         // an Ebb entry for it.
         if (is_switch && i != 0) || llvm_succ != unsafe { LLVMGetNextBasicBlock(llvm_bb) } {
-            ebb_map.insert(llvm_succ, builder.create_ebb());
+            ctx.ebb_map.insert(llvm_succ, ctx.builder.create_ebb());
         }
     }
 }
 
 /// Translate the contents of `llvm_bb` to Cretonne IL instructions.
-fn translate_bb(
-    llvm_func: LLVMValueRef,
-    llvm_bb: LLVMBasicBlockRef,
-    builder: &mut cton_frontend::FunctionBuilder<Variable>,
-    value_map: &mut HashMap<LLVMValueRef, Variable>,
-    ebb_info: &mut HashMap<LLVMBasicBlockRef, EbbInfo>,
-    ebb_map: &mut HashMap<LLVMBasicBlockRef, ir::Ebb>,
-    data_layout: LLVMTargetDataRef,
-) {
+fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
     // Set up the Ebb as needed.
-    if ebb_info.get(&llvm_bb).is_none() {
+    if ctx.ebb_info.get(&llvm_bb).is_none() {
         // Block has no predecessors.
-        let entry_block = !builder.entry_block_started();
-        let ebb = builder.create_ebb();
-        builder.seal_block(ebb);
-        builder.switch_to_block(ebb, &[]);
+        let entry_block = !ctx.builder.entry_block_started();
+        let ebb = ctx.builder.create_ebb();
+        ctx.builder.seal_block(ebb);
+        ctx.builder.switch_to_block(ebb, &[]);
         if entry_block {
             // It's the entry block. Add the parameters.
-            translate_function_params(llvm_func, builder, value_map, data_layout);
+            translate_function_params(llvm_func, ctx);
         }
-    } else if let hash_map::Entry::Occupied(entry) = ebb_map.entry(llvm_bb) {
+    } else if let hash_map::Entry::Occupied(entry) = ctx.ebb_map.entry(llvm_bb) {
         // Block has predecessors and is branched to, so it starts a new Ebb.
         let ebb = *entry.get();
-        builder.switch_to_block(ebb, &[]);
+        ctx.builder.switch_to_block(ebb, &[]);
     }
 
     // Translate each regular instruction.
     let mut llvm_inst = unsafe { LLVMGetFirstInstruction(llvm_bb) };
     while !llvm_inst.is_null() {
-        translate_inst(llvm_bb, llvm_inst, builder, value_map, ebb_map, data_layout);
+        translate_inst(llvm_bb, llvm_inst, ctx);
         llvm_inst = unsafe { LLVMGetNextInstruction(llvm_inst) };
     }
 
@@ -243,12 +181,12 @@ fn translate_bb(
     let num_succs = unsafe { LLVMGetNumSuccessors(term) };
     for i in 0..num_succs {
         let llvm_succ = unsafe { LLVMGetSuccessor(term, i) };
-        let info = ebb_info.get_mut(&llvm_succ).unwrap();
+        let info = ctx.ebb_info.get_mut(&llvm_succ).unwrap();
         debug_assert!(info.num_preds_left > 0);
         info.num_preds_left -= 1;
         if info.num_preds_left == 0 {
-            if let Some(ebb) = ebb_map.get(&llvm_succ) {
-                builder.seal_block(*ebb);
+            if let Some(ebb) = ctx.ebb_map.get(&llvm_succ) {
+                ctx.builder.seal_block(*ebb);
             }
         }
     }
@@ -267,12 +205,12 @@ pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
 }
 
 /// Return the Cretonne integer type for a pointer.
-pub fn translate_pointer_type(data_layout: LLVMTargetDataRef) -> ir::Type {
-    translate_integer_type(unsafe { LLVMPointerSize(data_layout) * 8 } as usize)
+pub fn translate_pointer_type(dl: LLVMTargetDataRef) -> ir::Type {
+    translate_integer_type(unsafe { LLVMPointerSize(dl) * 8 } as usize)
 }
 
 /// Translate an LLVM first-class type into a Cretonne type.
-pub fn translate_type(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> ir::Type {
+pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
     match unsafe { LLVMGetTypeKind(llvm_ty) } {
         LLVMVoidTypeKind => ir::types::VOID,
         LLVMHalfTypeKind => panic!("unimplemented: f16 type"),
@@ -292,7 +230,7 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> i
             if unsafe { LLVMGetPointerAddressSpace(llvm_ty) } != 0 {
                 panic!("unimplemented: non-default address spaces");
             }
-            translate_pointer_type(data_layout)
+            translate_pointer_type(dl)
         }
         LLVMVectorTypeKind => panic!("unimplemented: vector types"),
         LLVMMetadataTypeKind => panic!("attempted to translate a metadata type"),
@@ -302,7 +240,7 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> i
 }
 
 /// Translate an LLVM function type into a Cretonne signature.
-pub fn translate_sig(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> ir::Signature {
+pub fn translate_sig(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Signature {
     debug_assert_eq!(unsafe { LLVMGetTypeKind(llvm_ty) }, LLVMFunctionTypeKind);
 
     let mut sig = ir::Signature::new(ir::CallConv::Native);
@@ -316,12 +254,12 @@ pub fn translate_sig(llvm_ty: LLVMTypeRef, data_layout: LLVMTargetDataRef) -> ir
     unsafe { LLVMGetParamTypes(llvm_ty, llvm_params.as_mut_ptr()) };
     let mut params: Vec<ir::AbiParam> = Vec::with_capacity(num_llvm_params);
     for llvm_param in &llvm_params {
-        params.push(ir::AbiParam::new(translate_type(*llvm_param, data_layout)));
+        params.push(ir::AbiParam::new(translate_type(*llvm_param, dl)));
     }
     sig.params = params;
 
     let mut returns: Vec<ir::AbiParam> = Vec::with_capacity(1);
-    match translate_type(unsafe { LLVMGetReturnType(llvm_ty) }, data_layout) {
+    match translate_type(unsafe { LLVMGetReturnType(llvm_ty) }, dl) {
         ir::types::VOID => {}
         ty => returns.push(ir::AbiParam::new(ty)),
     }

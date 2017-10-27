@@ -9,5 +9,6 @@ extern crate libc;
 
 mod translate;
 mod operations;
+mod context;
 
 pub use translate::{create_llvm_context, read_llvm, translate_module};
