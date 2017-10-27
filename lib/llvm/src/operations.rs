@@ -48,6 +48,7 @@ pub fn translate_inst(llvm_bb: LLVMBasicBlockRef, llvm_inst: LLVMValueRef, ctx: 
             def_val(llvm_inst, result, ctx);
         }
         LLVMSub => {
+            // TODO: use irsub_imm when applicable.
             let result = match binary_operands_r_ri(llvm_inst, ctx) {
                 RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().bxor_not(lhs, rhs),
                 RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().isub(lhs, rhs),
