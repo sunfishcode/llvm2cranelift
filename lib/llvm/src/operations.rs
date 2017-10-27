@@ -948,7 +948,7 @@ fn translate_gep_index(
                     pointer_type,
                     ir::immediates::Imm64::new(size as i64),
                 );
-                x = ctx.builder.ins().imul(x, scale)
+                x = ctx.builder.ins().imul(x, scale);
             }
 
             (x, llvm_eltty)
