@@ -590,7 +590,11 @@ fn materialize_constant(llvm_val: LLVMValueRef, ctx: &mut Context) -> ir::Value 
         LLVMConstantFPValueKind => {
             let mut loses_info = [0];
             let val = unsafe { LLVMConstRealGetDouble(llvm_val, loses_info.as_mut_ptr()) };
-            debug_assert_eq!(loses_info[0], 0);
+            debug_assert_eq!(
+                loses_info[0],
+                0,
+                "unimplemented floating-point constant value"
+            );
             match translate_type_of(llvm_val, ctx.dl) {
                 ir::types::F32 => {
                     let f32val = val as f32;
