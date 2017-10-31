@@ -17,7 +17,7 @@ use llvm_sys::LLVMCallConv::*;
 use llvm_sys::*;
 use libc;
 
-use translate::{translate_type, translate_pointer_type, translate_sig, translate_function_name,
+use translate::{translate_type, translate_pointer_type, translate_sig, translate_symbol_name,
                 translate_string};
 use context::{Context, Variable};
 
@@ -187,7 +187,7 @@ pub fn translate_inst(llvm_bb: LLVMBasicBlockRef, llvm_inst: LLVMValueRef, ctx: 
             sig.params.resize(2, ir::AbiParam::new(ty));
             sig.returns.push(ir::AbiParam::new(ty));
             let data = ir::ExtFuncData {
-                name: ir::FunctionName::new(match ty {
+                name: ir::ExternalName::new(match ty {
                     ir::types::F32 => "fmodf",
                     ir::types::F64 => "fmod",
                     _ => panic!("frem unimplemented for type {:?}", ty),
@@ -508,7 +508,7 @@ pub fn translate_inst(llvm_bb: LLVMBasicBlockRef, llvm_inst: LLVMValueRef, ctx: 
             let signature = ctx.builder.import_signature(
                 translate_sig(llvm_functy, ctx.dl),
             );
-            let name = translate_function_name(unsafe { LLVMGetValueName(llvm_callee) })
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_callee) })
                 .expect("unimplemented: unusual function names");
             let call = if unsafe { LLVMGetValueKind(llvm_callee) } == LLVMFunctionValueKind {
                 let data = ir::ExtFuncData { name, signature };
@@ -586,13 +586,22 @@ fn materialize_constant(llvm_val: LLVMValueRef, ctx: &mut Context) -> ir::Value 
                 unsafe { LLVMGetElementType(LLVMTypeOf(llvm_val)) },
                 ctx.dl,
             ));
-            let name = translate_function_name(unsafe { LLVMGetValueName(llvm_val) })
-                .expect("unimplemented: unusual function names");
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) })
+                .expect("unimplemented: unusual symbol names");
             let callee = ctx.builder.import_function(
                 ir::ExtFuncData { name, signature },
             );
             let ty = translate_pointer_type(ctx.dl);
             ctx.builder.ins().func_addr(ty, callee)
+        }
+        LLVMGlobalVariableValueKind => {
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) })
+                .expect("unimplemented: unusual symbol names");
+            let global = ctx.builder.create_global_var(
+                ir::GlobalVarData::Sym { name },
+            );
+            let ty = translate_pointer_type(ctx.dl);
+            ctx.builder.ins().global_addr(ty, global)
         }
         LLVMConstantFPValueKind => {
             let mut loses_info = [0];
@@ -814,7 +823,7 @@ fn translate_intr_libcall(
         ));
     }
 
-    let name = ir::FunctionName::new(name);
+    let name = ir::ExternalName::new(name);
     let signature = ctx.builder.import_signature(translate_sig(
         unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
         ctx.dl,
@@ -857,7 +866,7 @@ fn translate_mem_intrinsic(name: &str, llvm_inst: LLVMValueRef, ctx: &mut Contex
     // start optimizing these libcalls.
     let args = [dst_arg, src_arg, len_arg];
 
-    let funcname = ir::FunctionName::new(name);
+    let funcname = ir::ExternalName::new(name);
     let mut sig = ir::Signature::new(ir::CallConv::Native);
     sig.params.resize(3, ir::AbiParam::new(pointer_type));
     if name == "memset" {

@@ -30,8 +30,8 @@ pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String>
 }
 
 /// Translate from an llvm-sys C-style string to an `ir::FunctionName`.
-pub fn translate_function_name(charstar: *const libc::c_char) -> Result<ir::FunctionName, String> {
-    Ok(ir::FunctionName::new(
+pub fn translate_symbol_name(charstar: *const libc::c_char) -> Result<ir::ExternalName, String> {
+    Ok(ir::ExternalName::new(
         translate_string(charstar)?.as_bytes(),
     ))
 }
@@ -92,7 +92,7 @@ pub fn translate_function(
     // TODO: Reuse the context between separate invocations.
     let mut cton_ctx = cretonne::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-    cton_ctx.func.name = translate_function_name(llvm_name)?;
+    cton_ctx.func.name = translate_symbol_name(llvm_name)?;
     cton_ctx.func.signature =
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 

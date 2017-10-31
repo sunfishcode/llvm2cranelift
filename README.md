@@ -50,10 +50,10 @@ Features not yet implemented, but which could be reasonably implemented include:
  - SIMD types and operations
  - ConstantExprs
  - most function argument attributes
+ - global aliases
 
 Features not yet implemented that would require features that Cretonne does not
 yet fully implement include:
- - global variables and aliases
  - exception handling (invoke, landingpad, etc.)
  - debug info
  - indirectbr
