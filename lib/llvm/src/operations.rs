@@ -936,7 +936,9 @@ fn translate_gep_index(
             let index_type = translate_type_of(index, ctx.dl);
             let mut x = use_val(index, ctx);
             if index_type != pointer_type {
-                if index_type.bits() < pointer_type.bits() {
+                if index_type.is_bool() {
+                    x = ctx.builder.ins().bmask(pointer_type, x);
+                } else if index_type.bits() < pointer_type.bits() {
                     x = ctx.builder.ins().sextend(pointer_type, x);
                 } else {
                     x = ctx.builder.ins().ireduce(pointer_type, x);
