@@ -578,6 +578,7 @@ fn materialize_constant(llvm_val: LLVMValueRef, ctx: &mut Context) -> ir::Value 
             let ty = translate_pointer_type(ctx.dl);
             ctx.builder.ins().func_addr(ty, callee)
         }
+        LLVMGlobalAliasValueKind |
         LLVMGlobalVariableValueKind => {
             let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) })
                 .expect("unimplemented: unusual symbol names");

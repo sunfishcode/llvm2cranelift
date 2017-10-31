@@ -49,7 +49,6 @@ Features not yet implemented, but which could be reasonably implemented include:
  - first-class aggregates
  - SIMD types and operations
  - most function argument attributes
- - global aliases
 
 Features not yet implemented that would require features that Cretonne does not
 yet fully implement include:
