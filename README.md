@@ -48,7 +48,6 @@ Features not yet implemented, but which could be reasonably implemented include:
  - switch instructions with non-sequential cases
  - first-class aggregates
  - SIMD types and operations
- - ConstantExprs
  - most function argument attributes
  - global aliases
 
