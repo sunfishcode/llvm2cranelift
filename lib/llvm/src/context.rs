@@ -28,12 +28,6 @@ impl Variable {
     }
 }
 
-impl Default for Variable {
-    fn default() -> Self {
-        Variable(u32::MAX)
-    }
-}
-
 /// Information about Ebbs that we'll create.
 pub struct EbbInfo {
     pub num_preds_left: usize,
