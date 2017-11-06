@@ -17,9 +17,9 @@ use llvm_sys::LLVMCallConv::*;
 use llvm_sys::*;
 use libc;
 
-use translate::{translate_type, translate_pointer_type, translate_sig, translate_symbol_name,
-                translate_string};
+use translate::{translate_symbol_name, translate_string};
 use context::{Context, Variable};
+use types::{translate_type, translate_pointer_type, translate_sig};
 
 /// Translate the incoming parameters for `llvm_func` into Cretonne values
 /// defined in the entry block.
