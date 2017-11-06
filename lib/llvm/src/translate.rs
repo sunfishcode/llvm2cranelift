@@ -87,13 +87,8 @@ pub fn translate_module(
         if unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
             let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
             let external_name = translate_symbol_name(llvm_name)?;
-            // TODO: Move this translation elsewhere? But ExternalName doesn't
-            // (yet?) implement Hash.
-            let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
-                err.description().to_string()
-            })?;
-            result.imports.push(name.to_string());
-            result.unique_imports.insert(name.to_string());
+            result.unique_imports.insert(external_name.clone());
+            result.imports.push(external_name);
         } else {
             let func = translate_function(llvm_func, dl, isa)?;
             result.functions.push(func);
@@ -107,13 +102,8 @@ pub fn translate_module(
         if unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
             let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
             let external_name = translate_symbol_name(llvm_name)?;
-            // TODO: Move this translation elsewhere? But ExternalName doesn't
-            // (yet?) implement Hash.
-            let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
-                err.description().to_string()
-            })?;
-            result.imports.push(name.to_string());
-            result.unique_imports.insert(name.to_string());
+            result.unique_imports.insert(external_name.clone());
+            result.imports.push(external_name);
         } else {
             let (name, contents) = translate_global(llvm_global, dl)?;
             result.data_symbols.push(DataSymbol { name, contents });

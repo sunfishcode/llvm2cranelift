@@ -118,7 +118,7 @@ fn handle_module(
                 let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
                     err.description().to_string()
                 })?;
-                if module.unique_imports.contains(&name.to_string()) {
+                if module.unique_imports.contains(external_name) {
                     obj.link_import(func_name, name, *offset as usize);
                 } else {
                     obj.link(func_name, name, *offset as usize);

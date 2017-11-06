@@ -71,8 +71,8 @@ impl<'a> fmt::Display for DisplayCompiledFunction<'a> {
 pub struct Module {
     pub functions: Vec<CompiledFunction>,
     pub data_symbols: Vec<DataSymbol>,
-    pub imports: Vec<String>,
-    pub unique_imports: HashSet<String>,
+    pub imports: Vec<ir::ExternalName>,
+    pub unique_imports: HashSet<ir::ExternalName>,
 }
 
 impl Module {
