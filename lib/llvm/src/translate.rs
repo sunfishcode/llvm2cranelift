@@ -2,7 +2,7 @@
 
 use cretonne;
 use cretonne::ir;
-use cretonne::settings;
+use cretonne::isa::TargetIsa;
 use cton_frontend;
 use std::collections::hash_map;
 use std::error::Error;
@@ -14,10 +14,13 @@ use llvm_sys::core::*;
 use llvm_sys::ir_reader::*;
 use llvm_sys::target::*;
 use llvm_sys::LLVMTypeKind::*;
+use llvm_sys::LLVMValueKind::*;
 use libc;
 
 use operations::{translate_function_params, translate_inst};
 use context::{Context, EbbInfo, Variable};
+use module::{Module, CompiledFunction, DataSymbol, Compilation};
+use reloc_sink::RelocSink;
 
 /// Translate from an llvm-sys C-style string to a Rust String.
 pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String> {
@@ -69,26 +72,104 @@ pub fn read_llvm(llvm_ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, 
 }
 
 /// Translate an LLVM module into Cretonne IL.
-pub fn translate_module(llvm_mod: LLVMModuleRef) -> Result<Vec<ir::Function>, String> {
+pub fn translate_module(
+    llvm_mod: LLVMModuleRef,
+    isa: Option<&TargetIsa>,
+) -> Result<Module, String> {
     // TODO: Use a more sophisticated API rather than just stuffing all
     // the functions into a Vec.
-    let mut results = Vec::new();
-    let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
+    let mut result = Module::new();
     let dl = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
+
+    // Translate the Functions.
+    let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     while !llvm_func.is_null() {
-        if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
-            results.push(translate_function(llvm_func, dl)?);
+        if unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
+            let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
+            let external_name = translate_symbol_name(llvm_name)?;
+            // TODO: Move this translation elsewhere? But ExternalName doesn't
+            // (yet?) implement Hash.
+            let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
+                err.description().to_string()
+            })?;
+            result.imports.push(name.to_string());
+            result.unique_imports.insert(name.to_string());
+        } else {
+            let func = translate_function(llvm_func, dl, isa)?;
+            result.functions.push(func);
         }
         llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
     }
-    Ok(results)
+
+    // Translate the GlobalVariables.
+    let mut llvm_global = unsafe { LLVMGetFirstGlobal(llvm_mod) };
+    while !llvm_global.is_null() {
+        if unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
+            let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
+            let external_name = translate_symbol_name(llvm_name)?;
+            // TODO: Move this translation elsewhere? But ExternalName doesn't
+            // (yet?) implement Hash.
+            let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
+                err.description().to_string()
+            })?;
+            result.imports.push(name.to_string());
+            result.unique_imports.insert(name.to_string());
+        } else {
+            let (name, contents) = translate_global(llvm_global, dl)?;
+            result.data_symbols.push(DataSymbol { name, contents });
+        }
+        llvm_global = unsafe { LLVMGetNextGlobal(llvm_global) };
+    }
+
+    // TODO: GlobalAliases, ifuncs, metadata, comdat groups, inline asm
+
+    Ok(result)
+}
+
+pub fn translate_global(
+    llvm_global: LLVMValueRef,
+    dl: LLVMTargetDataRef,
+) -> Result<(ir::ExternalName, Vec<u8>), String> {
+    let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
+    let name = translate_symbol_name(llvm_name)?;
+
+    let llvm_ty = unsafe { LLVMGetElementType(LLVMTypeOf(llvm_global)) };
+    let size = unsafe { LLVMABISizeOfType(dl, llvm_ty) };
+
+    let llvm_init = unsafe { LLVMGetInitializer(llvm_global) };
+    let llvm_kind = unsafe { LLVMGetValueKind(llvm_init) };
+    let mut contents = Vec::new();
+    match llvm_kind {
+        LLVMConstantIntValueKind => {
+            let raw = unsafe { LLVMConstIntGetSExtValue(llvm_init) };
+            let mut part = raw;
+            for _ in 0..size {
+                contents.push((part & 0xff) as u8);
+                part >>= 8;
+            }
+        }
+        LLVMConstantAggregateZeroValueKind => {
+            for _ in 0..size {
+                contents.push(0u8);
+            }
+        }
+        _ => {
+            panic!(
+                "unimplemented constant initializer value kind: {:?}",
+                llvm_kind
+            )
+        }
+    }
+
+    Ok((name, contents))
 }
 
 /// Translate the contents of `llvm_func` to Cretonne IL.
 pub fn translate_function(
     llvm_func: LLVMValueRef,
     dl: LLVMTargetDataRef,
-) -> Result<ir::Function, String> {
+    isa: Option<&TargetIsa>,
+) -> Result<CompiledFunction, String> {
     // TODO: Reuse the context between separate invocations.
     let mut cton_ctx = cretonne::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
@@ -116,14 +197,28 @@ pub fn translate_function(
         }
     }
 
-    // TODO: Make the flags configurable.
-    // TODO: This verification pass may be redundant in some settings.
-    let flags = settings::Flags::new(&settings::builder());
-    cton_ctx.verify_if(&flags).map_err(|err| {
-        err.description().to_string()
-    })?;
+    if let Some(isa) = isa {
+        let code_size = cton_ctx.compile(isa).map_err(
+            |err| err.description().to_string(),
+        )?;
+        let mut code_buf: Vec<u8> = Vec::with_capacity(code_size as usize);
+        let mut reloc_sink = RelocSink::new();
+        code_buf.resize(code_size as usize, 0);
+        cton_ctx.emit_to_memory(code_buf.as_mut_ptr(), &mut reloc_sink, isa);
 
-    Ok((cton_ctx.func))
+        Ok(CompiledFunction {
+            il: cton_ctx.func,
+            compilation: Some(Compilation {
+                body: code_buf,
+                relocs: reloc_sink,
+            }),
+        })
+    } else {
+        Ok(CompiledFunction {
+            il: cton_ctx.func,
+            compilation: None,
+        })
+    }
 }
 
 /// Since LLVM's C API doesn't expose predecessor accessors, we make a prepass

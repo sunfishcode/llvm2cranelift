@@ -7,6 +7,7 @@ extern crate docopt;
 extern crate term;
 #[macro_use]
 extern crate serde_derive;
+extern crate faerie;
 
 use cretonne::VERSION;
 use docopt::Docopt;
@@ -20,19 +21,17 @@ const USAGE: &str = "
 Cretonne code generator utility
 
 Usage:
-    llvm2cretonne [-ctvp] [--set <set>]... [--isa <isa>] <file>...
+    llvm2cretonne -p [-v] [--set <set>]... [--isa <isa>] <file>...
+    llvm2cretonne [-v] [--set <set>]... [--isa <isa>] -o <output> <file>...
     llvm2cretonne --help | --version
 
 Options:
     -v, --verbose   be more verbose
-    -t, --just-decode
-                    just decode WebAssembly to Cretonne IL
-    -c, --check-translation
-                    just checks the correctness of Cretonne IL translated from WebAssembly
     -p, --print     print the resulting Cretonne IL
     -h, --help      print this help message
     --set=<set>     configure Cretonne settings
     --isa=<isa>     specify the Cretonne ISA
+    -o, --output    specify the output file
     --version       print the Cretonne version
 
 ";
@@ -40,8 +39,7 @@ Options:
 #[derive(Deserialize, Debug)]
 struct Args {
     arg_file: Vec<String>,
-    flag_just_decode: bool,
-    flag_check_translation: bool,
+    arg_output: String,
     flag_print: bool,
     flag_verbose: bool,
     flag_set: Vec<String>,
@@ -64,9 +62,8 @@ fn cton_util() -> CommandResult {
 
     llvm::run(
         args.arg_file,
+        &args.arg_output,
         args.flag_verbose,
-        args.flag_just_decode,
-        args.flag_check_translation,
         args.flag_print,
         args.flag_set,
         args.flag_isa,

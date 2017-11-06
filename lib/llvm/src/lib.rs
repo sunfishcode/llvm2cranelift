@@ -10,5 +10,7 @@ extern crate libc;
 mod translate;
 mod operations;
 mod context;
+mod module;
+mod reloc_sink;
 
 pub use translate::{create_llvm_context, read_llvm, translate_module};
