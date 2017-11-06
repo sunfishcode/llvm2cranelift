@@ -63,6 +63,8 @@ yet fully implement include:
  - inline asm
  - GC hooks
  - varargs
+ - ifuncs
+ - comdat groups
 
 Optimizations that are commonly done for LLVM IR during codegen that aren't yet
 implemented include:
