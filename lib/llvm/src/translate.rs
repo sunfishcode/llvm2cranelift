@@ -126,6 +126,7 @@ pub fn translate_module(
     Ok(result)
 }
 
+/// Translate the GlobalVariable `llvm_global` to Cretonne IL.
 pub fn translate_global(
     llvm_global: LLVMValueRef,
     dl: LLVMTargetDataRef,
@@ -164,7 +165,7 @@ pub fn translate_global(
     Ok((name, contents))
 }
 
-/// Translate the contents of `llvm_func` to Cretonne IL.
+/// Translate the Function `llvm_func` to Cretonne IL.
 pub fn translate_function(
     llvm_func: LLVMValueRef,
     dl: LLVMTargetDataRef,
