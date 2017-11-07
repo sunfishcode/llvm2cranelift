@@ -246,7 +246,7 @@ fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut C
         ctx.builder.switch_to_block(ebb);
         if entry_block {
             // It's the entry block. Add the parameters.
-            translate_function_params(llvm_func, ctx);
+            translate_function_params(llvm_func, ebb, ctx);
         }
     } else if let hash_map::Entry::Occupied(entry) = ctx.ebb_map.entry(llvm_bb) {
         // Block has predecessors and is branched to, so it starts a new Ebb.

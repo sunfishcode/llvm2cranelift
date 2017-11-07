@@ -1,6 +1,6 @@
 //! Translation from LLVM IR operations to Cretonne IL instructions.
 
-use cretonne::ir::{self, InstBuilder};
+use cretonne::ir::{self, InstBuilder, Ebb};
 use std::collections::hash_map;
 use std::mem;
 use std::ptr;
@@ -23,10 +23,10 @@ use types::{translate_type, translate_pointer_type, translate_sig};
 
 /// Translate the incoming parameters for `llvm_func` into Cretonne values
 /// defined in the entry block.
-pub fn translate_function_params(llvm_func: LLVMValueRef, ctx: &mut Context) {
+pub fn translate_function_params(llvm_func: LLVMValueRef, entry_ebb: Ebb, ctx: &mut Context) {
     for i in 0..unsafe { LLVMCountParams(llvm_func) } {
         let llvm_param = unsafe { LLVMGetParam(llvm_func, i) };
-        let val = ctx.builder.param_value(i as usize);
+        let val = ctx.builder.ebb_params(entry_ebb)[i as usize];
         def_val(llvm_param, val, ctx);
     }
 }
