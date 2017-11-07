@@ -243,7 +243,7 @@ fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut C
         let entry_block = !ctx.builder.entry_block_started();
         let ebb = ctx.builder.create_ebb();
         ctx.builder.seal_block(ebb);
-        ctx.builder.switch_to_block(ebb, &[]);
+        ctx.builder.switch_to_block(ebb);
         if entry_block {
             // It's the entry block. Add the parameters.
             translate_function_params(llvm_func, ctx);
@@ -251,7 +251,7 @@ fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut C
     } else if let hash_map::Entry::Occupied(entry) = ctx.ebb_map.entry(llvm_bb) {
         // Block has predecessors and is branched to, so it starts a new Ebb.
         let ebb = *entry.get();
-        ctx.builder.switch_to_block(ebb, &[]);
+        ctx.builder.switch_to_block(ebb);
     }
 
     // Translate each regular instruction.

@@ -730,7 +730,7 @@ fn translate_intrinsic(
             ctx.builder.ins().trap(ir::TrapCode::User(1));
             let ebb = ctx.builder.create_ebb();
             ctx.builder.seal_block(ebb);
-            ctx.builder.switch_to_block(ebb, &[]);
+            ctx.builder.switch_to_block(ebb);
             return None;
         }
         "llvm.debugtrap" => {
@@ -738,7 +738,7 @@ fn translate_intrinsic(
             ctx.builder.ins().trap(ir::TrapCode::User(2));
             let ebb = ctx.builder.create_ebb();
             ctx.builder.seal_block(ebb);
-            ctx.builder.switch_to_block(ebb, &[]);
+            ctx.builder.switch_to_block(ebb);
             return None;
         }
         "llvm.fmuladd.f32" |
