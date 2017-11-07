@@ -240,7 +240,7 @@ fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut C
     // Set up the Ebb as needed.
     if ctx.ebb_info.get(&llvm_bb).is_none() {
         // Block has no predecessors.
-        let entry_block = !ctx.builder.entry_block_started();
+        let entry_block = llvm_bb == unsafe { LLVMGetEntryBasicBlock(llvm_func) };
         let ebb = ctx.builder.create_ebb();
         ctx.builder.seal_block(ebb);
         ctx.builder.switch_to_block(ebb);
