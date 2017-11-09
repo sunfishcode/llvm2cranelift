@@ -442,14 +442,19 @@ fn translate_operation(
         LLVMGetElementPtr => {
             let pointer_type = translate_pointer_type(ctx.dl);
             let llvm_ptr = unsafe { LLVMGetOperand(llvm_val, 0) };
-            let mut ptr = use_val(llvm_ptr, ctx);
             let mut llvm_gepty = unsafe { LLVMTypeOf(llvm_ptr) };
+            let mut ptr = use_val(llvm_ptr, ctx);
+            let mut imm = 0;
             for i in 1..unsafe { LLVMGetNumOperands(llvm_val) } as libc::c_uint {
                 let index = unsafe { LLVMGetOperand(llvm_val, i) };
-                let (new_ptr, new_llvm_gepty) =
-                    translate_gep_index(llvm_gepty, ptr, pointer_type, index, ctx);
-                ptr = new_ptr;
+                let (new_llvm_gepty, new_ptr, new_imm) =
+                    translate_gep_index(llvm_gepty, ptr, imm, pointer_type, index, ctx);
                 llvm_gepty = new_llvm_gepty;
+                ptr = new_ptr;
+                imm = new_imm;
+            }
+            if imm != 0 {
+                ptr = ctx.builder.ins().iadd_imm(ptr, imm);
             }
             ptr
         }
@@ -915,26 +920,32 @@ fn handle_phi_operands(
 fn translate_gep_index(
     llvm_gepty: LLVMTypeRef,
     ptr: ir::Value,
+    imm: i64,
     pointer_type: ir::Type,
     index: LLVMValueRef,
     ctx: &mut Context,
-) -> (ir::Value, LLVMTypeRef) {
+) -> (LLVMTypeRef, ir::Value, i64) {
     // TODO: We'd really want gep_type_iterator etc. here, but
     // LLVM's C API doesn't expose those currently.
     let (offset, ty) = match unsafe { LLVMGetTypeKind(llvm_gepty) } {
         LLVMStructTypeKind => {
             let i = unsafe { LLVMConstIntGetZExtValue(index) };
             debug_assert_eq!(u64::from(i as libc::c_uint), i);
-            let offset = unsafe { LLVMOffsetOfElement(ctx.dl, llvm_gepty, i as libc::c_uint) };
-            (
-                ctx.builder.ins().iconst(
-                    pointer_type,
-                    ir::immediates::Imm64::new(offset as i64),
-                ),
-                unsafe { LLVMStructGetTypeAtIndex(llvm_gepty, i as libc::c_uint) },
-            )
+            let llvm_eltty = unsafe { LLVMStructGetTypeAtIndex(llvm_gepty, i as libc::c_uint) };
+            let imm_offset =
+                unsafe { LLVMOffsetOfElement(ctx.dl, llvm_gepty, i as libc::c_uint) } as i64;
+            return (llvm_eltty, ptr, imm.wrapping_add(imm_offset));
         }
         LLVMPointerTypeKind | LLVMArrayTypeKind | LLVMVectorTypeKind => {
+            let llvm_eltty = unsafe { LLVMGetElementType(llvm_gepty) };
+            let size = unsafe { LLVMABISizeOfType(ctx.dl, llvm_eltty) };
+
+            if unsafe { LLVMIsConstant(index) } != 0 {
+                let index_val = unsafe { LLVMConstIntGetSExtValue(index) };
+                let imm_offset = index_val.wrapping_mul(size as i64);
+                return (llvm_eltty, ptr, imm.wrapping_add(imm_offset));
+            }
+
             let index_type = translate_type_of(index, ctx.dl);
             let mut x = use_val(index, ctx);
             if index_type != pointer_type {
@@ -947,8 +958,6 @@ fn translate_gep_index(
                 }
             }
 
-            let llvm_eltty = unsafe { LLVMGetElementType(llvm_gepty) };
-            let size = unsafe { LLVMABISizeOfType(ctx.dl, llvm_eltty) };
             if size != 1 {
                 x = ctx.builder.ins().imul_imm(
                     x,
@@ -960,7 +969,7 @@ fn translate_gep_index(
         }
         _ => panic!("unexpected GEP indexing type: {:?}", llvm_gepty),
     };
-    (ctx.builder.ins().iadd(ptr, offset), ty)
+    (ty, ctx.builder.ins().iadd(ptr, offset), imm)
 }
 
 /// Emit a Cretonne jump to the destination corresponding to `llvm_succ`, if
