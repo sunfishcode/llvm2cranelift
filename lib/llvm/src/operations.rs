@@ -950,11 +950,10 @@ fn translate_gep_index(
             let llvm_eltty = unsafe { LLVMGetElementType(llvm_gepty) };
             let size = unsafe { LLVMABISizeOfType(ctx.dl, llvm_eltty) };
             if size != 1 {
-                let scale = ctx.builder.ins().iconst(
-                    pointer_type,
+                x = ctx.builder.ins().imul_imm(
+                    x,
                     ir::immediates::Imm64::new(size as i64),
                 );
-                x = ctx.builder.ins().imul(x, scale);
             }
 
             (x, llvm_eltty)
