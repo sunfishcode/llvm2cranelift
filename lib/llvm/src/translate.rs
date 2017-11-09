@@ -84,13 +84,42 @@ pub fn translate_module(
     // Translate the Functions.
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     while !llvm_func.is_null() {
-        if unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
-            let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-            let external_name = translate_symbol_name(llvm_name)?;
-            result.unique_imports.insert(external_name.clone());
-            result.imports.push(external_name);
-        } else {
+        if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
             let func = translate_function(llvm_func, dl, isa)?;
+
+            // Collect externally referenced symbols for the module.
+            for func_ref in func.il.dfg.ext_funcs.keys() {
+                let name = &func.il.dfg.ext_funcs[func_ref].name;
+                // If this function is defined inside the module, don't list it
+                // as an import.
+                let c_str = ffi::CString::new(name.as_ref()).map_err(|err| {
+                    err.description().to_string()
+                })?;
+                let llvm_str = c_str.as_ptr();
+                let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
+                if llvm_func.is_null() || unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
+                    if result.unique_imports.insert(name.clone()) {
+                        result.imports.push(name.clone());
+                    }
+                }
+            }
+            for global_var in func.il.global_vars.keys() {
+                if let ir::GlobalVarData::Sym { ref name } = func.il.global_vars[global_var] {
+                    // If this global is defined inside the module, don't list it
+                    // as an import.
+                    let c_str = ffi::CString::new(name.as_ref()).map_err(|err| {
+                        err.description().to_string()
+                    })?;
+                    let llvm_str = c_str.as_ptr();
+                    let llvm_global = unsafe { LLVMGetNamedGlobal(llvm_mod, llvm_str) };
+                    if llvm_global.is_null() || unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
+                        if result.unique_imports.insert(name.clone()) {
+                            result.imports.push(name.clone());
+                        }
+                    }
+                }
+            }
+
             result.functions.push(func);
         }
         llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
@@ -99,12 +128,7 @@ pub fn translate_module(
     // Translate the GlobalVariables.
     let mut llvm_global = unsafe { LLVMGetFirstGlobal(llvm_mod) };
     while !llvm_global.is_null() {
-        if unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
-            let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
-            let external_name = translate_symbol_name(llvm_name)?;
-            result.unique_imports.insert(external_name.clone());
-            result.imports.push(external_name);
-        } else {
+        if unsafe { LLVMIsDeclaration(llvm_global) } == 0 {
             let (name, contents) = translate_global(llvm_global, dl)?;
             result.data_symbols.push(DataSymbol { name, contents });
         }
