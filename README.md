@@ -57,6 +57,7 @@ yet fully implement include:
  - indirectbr
  - dynamic alloca
  - atomic operations
+ - thread-local globals
  - volatile operations
  - integer types with unusual sizes
  - add-with-overflow intrinsics
