@@ -49,23 +49,27 @@ Features not yet implemented, but which could be reasonably implemented include:
  - first-class aggregates
  - SIMD types and operations
  - most function argument attributes
+ - integer types with unusual sizes
+ - indirectbr
 
 Features not yet implemented that would require features that Cretonne does not
 yet fully implement include:
  - exception handling (invoke, landingpad, etc.)
- - debug info
- - indirectbr
  - dynamic alloca
  - atomic operations
  - thread-local globals
  - volatile operations
- - integer types with unusual sizes
  - add-with-overflow intrinsics
  - inline asm
  - GC hooks
  - varargs
  - ifuncs
  - comdat groups
+
+Features not yet implemented that LLVM's C API does not yet sufficiently expose:
+ - global aliases
+ - debug source locations for instructions
+ - debug info
 
 Optimizations that are commonly done for LLVM IR during codegen that aren't yet
 implemented include:
