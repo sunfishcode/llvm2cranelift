@@ -128,7 +128,7 @@ pub fn translate_module(
     // Translate the GlobalVariables.
     let mut llvm_global = unsafe { LLVMGetFirstGlobal(llvm_mod) };
     while !llvm_global.is_null() {
-        if unsafe { LLVMIsThreadLocal(llvm_global) } != 0) {
+        if unsafe { LLVMIsThreadLocal(llvm_global) } != 0 {
             panic!("unimplemented: thread-local variables");
         }
         if unsafe { LLVMIsDeclaration(llvm_global) } == 0 {
