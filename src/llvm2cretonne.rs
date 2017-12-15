@@ -8,6 +8,7 @@ extern crate term;
 #[macro_use]
 extern crate serde_derive;
 extern crate faerie;
+extern crate goblin;
 
 use cretonne::VERSION;
 use docopt::Docopt;

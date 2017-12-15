@@ -15,10 +15,11 @@ use llvm_sys::ir_reader::*;
 use llvm_sys::target::*;
 use llvm_sys::LLVMValueKind::*;
 use libc;
+use string_table::StringTable;
 
 use operations::{translate_function_params, translate_inst};
 use context::{Context, EbbInfo, Variable};
-use module::{Module, CompiledFunction, DataSymbol, Compilation};
+use module::{Module, CompiledFunction, DataSymbol, Compilation, SymbolKind};
 use reloc_sink::RelocSink;
 use types::translate_sig;
 
@@ -33,10 +34,11 @@ pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String>
 }
 
 /// Translate from an llvm-sys C-style string to an `ir::FunctionName`.
-pub fn translate_symbol_name(charstar: *const libc::c_char) -> Result<ir::ExternalName, String> {
-    Ok(ir::ExternalName::new(
-        translate_string(charstar)?.as_bytes(),
-    ))
+pub fn translate_symbol_name(
+    charstar: *const libc::c_char,
+    strings: &mut StringTable,
+) -> Result<ir::ExternalName, String> {
+    Ok(strings.get_extname(translate_string(charstar)?))
 }
 
 /// Create an LLVM Context.
@@ -85,37 +87,31 @@ pub fn translate_module(
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     while !llvm_func.is_null() {
         if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
-            let func = translate_function(llvm_func, dl, isa)?;
+            let func = translate_function(llvm_func, dl, isa, &mut result.strings)?;
 
             // Collect externally referenced symbols for the module.
             for func_ref in func.il.dfg.ext_funcs.keys() {
                 let name = &func.il.dfg.ext_funcs[func_ref].name;
                 // If this function is defined inside the module, don't list it
                 // as an import.
-                let c_str = ffi::CString::new(name.as_ref()).map_err(|err| {
-                    err.description().to_string()
-                })?;
+                let c_str = ffi::CString::new(result.strings.get_str(name.clone()))
+                    .map_err(|err| err.description().to_string())?;
                 let llvm_str = c_str.as_ptr();
                 let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
                 if llvm_func.is_null() || unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
-                    if result.unique_imports.insert(name.clone()) {
-                        result.imports.push(name.clone());
-                    }
+                    result.imports.push((name.clone(), SymbolKind::Function));
                 }
             }
             for global_var in func.il.global_vars.keys() {
                 if let ir::GlobalVarData::Sym { ref name } = func.il.global_vars[global_var] {
                     // If this global is defined inside the module, don't list it
                     // as an import.
-                    let c_str = ffi::CString::new(name.as_ref()).map_err(|err| {
-                        err.description().to_string()
-                    })?;
+                    let c_str = ffi::CString::new(result.strings.get_str(name.clone()))
+                        .map_err(|err| err.description().to_string())?;
                     let llvm_str = c_str.as_ptr();
                     let llvm_global = unsafe { LLVMGetNamedGlobal(llvm_mod, llvm_str) };
                     if llvm_global.is_null() || unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
-                        if result.unique_imports.insert(name.clone()) {
-                            result.imports.push(name.clone());
-                        }
+                        result.imports.push((name.clone(), SymbolKind::Data));
                     }
                 }
             }
@@ -132,7 +128,7 @@ pub fn translate_module(
             panic!("unimplemented: thread-local variables");
         }
         if unsafe { LLVMIsDeclaration(llvm_global) } == 0 {
-            let (name, contents) = translate_global(llvm_global, dl)?;
+            let (name, contents) = translate_global(llvm_global, dl, &mut result.strings)?;
             result.data_symbols.push(DataSymbol { name, contents });
         }
         llvm_global = unsafe { LLVMGetNextGlobal(llvm_global) };
@@ -147,9 +143,10 @@ pub fn translate_module(
 pub fn translate_global(
     llvm_global: LLVMValueRef,
     dl: LLVMTargetDataRef,
+    strings: &mut StringTable,
 ) -> Result<(ir::ExternalName, Vec<u8>), String> {
     let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
-    let name = translate_symbol_name(llvm_name)?;
+    let name = translate_symbol_name(llvm_name, strings)?;
 
     let llvm_ty = unsafe { LLVMGetElementType(LLVMTypeOf(llvm_global)) };
     let size = unsafe { LLVMABISizeOfType(dl, llvm_ty) };
@@ -187,11 +184,12 @@ pub fn translate_function(
     llvm_func: LLVMValueRef,
     dl: LLVMTargetDataRef,
     isa: Option<&TargetIsa>,
+    strings: &mut StringTable,
 ) -> Result<CompiledFunction, String> {
     // TODO: Reuse the context between separate invocations.
     let mut cton_ctx = cretonne::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-    cton_ctx.func.name = translate_symbol_name(llvm_name)?;
+    cton_ctx.func.name = translate_symbol_name(llvm_name, strings)?;
     cton_ctx.func.signature =
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
@@ -210,7 +208,7 @@ pub fn translate_function(
         // Translate the contents of each basic block.
         llvm_bb = unsafe { LLVMGetFirstBasicBlock(llvm_func) };
         while !llvm_bb.is_null() {
-            translate_bb(llvm_func, llvm_bb, &mut ctx);
+            translate_bb(llvm_func, llvm_bb, &mut ctx, strings);
             llvm_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
         }
     }
@@ -263,7 +261,12 @@ fn prepare_for_bb(llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
 }
 
 /// Translate the contents of `llvm_bb` to Cretonne IL instructions.
-fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
+fn translate_bb(
+    llvm_func: LLVMValueRef,
+    llvm_bb: LLVMBasicBlockRef,
+    ctx: &mut Context,
+    strings: &mut StringTable,
+) {
     // Set up the Ebb as needed.
     if ctx.ebb_info.get(&llvm_bb).is_none() {
         // Block has no predecessors.
@@ -284,7 +287,7 @@ fn translate_bb(llvm_func: LLVMValueRef, llvm_bb: LLVMBasicBlockRef, ctx: &mut C
     // Translate each regular instruction.
     let mut llvm_inst = unsafe { LLVMGetFirstInstruction(llvm_bb) };
     while !llvm_inst.is_null() {
-        translate_inst(llvm_bb, llvm_inst, ctx);
+        translate_inst(llvm_bb, llvm_inst, ctx, strings);
         llvm_inst = unsafe { LLVMGetNextInstruction(llvm_inst) };
     }
 

@@ -1,9 +1,18 @@
 use cretonne::ir;
 use cretonne::isa::TargetIsa;
 use std::fmt;
-use std::collections::HashSet;
 
 use reloc_sink::RelocSink;
+use string_table::StringTable;
+
+/// The kind of symbol, either data or function.
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum SymbolKind {
+    /// Data symbol
+    Data,
+    /// Function symbol
+    Function,
+}
 
 pub struct DataSymbol {
     pub name: ir::ExternalName,
@@ -61,7 +70,7 @@ impl<'a> fmt::Display for DisplayCompiledFunction<'a> {
             }
             write!(f, "\n")?;
             for &(ref reloc, ref name, ref offset) in &compilation.relocs.relocs {
-                write!(f, "reloc: {}:{}@{}\n", reloc.0, name, offset)?;
+                write!(f, "reloc: {}:{}@{}\n", reloc, name, offset)?;
             }
         }
         Ok(())
@@ -71,8 +80,8 @@ impl<'a> fmt::Display for DisplayCompiledFunction<'a> {
 pub struct Module {
     pub functions: Vec<CompiledFunction>,
     pub data_symbols: Vec<DataSymbol>,
-    pub imports: Vec<ir::ExternalName>,
-    pub unique_imports: HashSet<ir::ExternalName>,
+    pub imports: Vec<(ir::ExternalName, SymbolKind)>,
+    pub strings: StringTable,
 }
 
 impl Module {
@@ -81,7 +90,7 @@ impl Module {
             functions: Vec::new(),
             data_symbols: Vec::new(),
             imports: Vec::new(),
-            unique_imports: HashSet::new(),
+            strings: StringTable::new(),
         }
     }
 }

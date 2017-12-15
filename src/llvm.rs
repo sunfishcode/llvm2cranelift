@@ -2,16 +2,17 @@
 //!
 //! Reads LLVM IR files, translates the functions' code to Cretonne IL.
 
-use cton_llvm::{create_llvm_context, read_llvm, translate_module};
+use cton_llvm::{create_llvm_context, read_llvm, translate_module, SymbolKind};
 use std::path::PathBuf;
 use cretonne::isa::TargetIsa;
+use cretonne::binemit::Reloc;
 use std::path::Path;
 use std::str;
-use std::error::Error;
 use std::fmt::format;
 use term;
 use utils::{parse_sets_and_isa, OwnedFlagsOrIsa};
-use faerie::{Artifact, Elf, Target};
+use faerie::{Artifact, Elf, Target, Link, RelocOverride, ImportKind, Decl};
+use goblin::elf;
 
 macro_rules! vprintln {
     ($x: expr, $($tts:tt)*) => {
@@ -81,7 +82,7 @@ fn handle_module(
 
     let ctx = create_llvm_context();
     let llvm_module = read_llvm(ctx, path.to_str().ok_or_else(|| "invalid utf8 in path")?)?;
-    let module = translate_module(llvm_module, isa)?;
+    let mut module = translate_module(llvm_module, isa)?;
 
     if flag_print {
         vprintln!(flag_verbose, "");
@@ -98,38 +99,60 @@ fn handle_module(
         let mut obj = Artifact::new(faerie_target(isa)?, Some(String::from(arg_output)));
 
         for import in &module.imports {
-            let name = str::from_utf8(import.as_ref()).map_err(|err| {
-                err.description().to_string()
-            })?;
-            obj.import(name);
+            obj.import(
+                module.strings.get_str(import.0.clone()),
+                translate_symbolkind(import.1),
+            ).expect("faerie import");
+        }
+        for func in &module.functions {
+            // FIXME: non-global functions.
+            obj.declare(
+                module.strings.get_str(func.il.name.clone()),
+                Decl::Function { global: true },
+            ).expect("faerie declare");
+        }
+        // FIXME: non-global and non-writeable data.
+        for data in &module.data_symbols {
+            obj.declare(
+                module.strings.get_str(data.name.clone()),
+                Decl::Data {
+                    global: true,
+                    writeable: true,
+                },
+            ).expect("faerie declare");
         }
         for func in module.functions {
-            let func_name = str::from_utf8(func.il.name.as_ref()).map_err(|err| {
-                err.description().to_string()
-            })?;
+            let func_name = module.strings.get_str(func.il.name);
             let compilation = func.compilation.unwrap();
-            obj.add_code(func_name, compilation.body);
-            for &(ref _reloc, ref external_name, ref offset) in &compilation.relocs.relocs {
+            obj.define(&func_name, compilation.body).expect(
+                "faerie define",
+            );
+            // TODO: reloc should derive from Copy
+            for &(ref reloc, ref external_name, offset) in &compilation.relocs.relocs {
                 // FIXME: What about other types of relocs?
                 // TODO: Faerie API: Seems like it might be inefficient to
                 // identify the caller by name each time.
                 // TODO: Faerie API: It's inconvenient to keep track of which
                 // symbols are imports and which aren't.
-                let name = str::from_utf8(external_name.as_ref()).map_err(|err| {
-                    err.description().to_string()
-                })?;
-                if module.unique_imports.contains(external_name) {
-                    obj.link_import(func_name, name, *offset as usize);
-                } else {
-                    obj.link(func_name, name, *offset as usize);
-                }
+                let name = module.strings.get_str(external_name.clone());
+                obj.link_with(
+                    Link {
+                        from: &func_name,
+                        to: &name,
+                        at: offset as usize,
+                    },
+                    RelocOverride {
+                        elftype: translate_reloc(reloc),
+                        addend: 0,
+                    },
+                ).expect("faerie link");
             }
         }
-        for data in &module.data_symbols {
-            let data_name = str::from_utf8(data.name.as_ref()).map_err(|err| {
-                err.description().to_string()
-            })?;
-            obj.add_data(data_name, data.contents.clone());
+        for data in module.data_symbols {
+            let data_name = module.strings.get_str(data.name.clone());
+            obj.define(data_name, data.contents.clone()).expect(
+                "faerie define",
+            );
         }
 
         let file = ::std::fs::File::create(Path::new(arg_output)).map_err(
@@ -148,6 +171,25 @@ fn handle_module(
     vprintln!(flag_verbose, "ok");
     terminal.reset().unwrap();
     Ok(())
+}
+
+// TODO: Reloc should by Copy
+fn translate_reloc(reloc: &Reloc) -> u32 {
+    match *reloc {
+        Reloc::IntelPCRel4 => elf::reloc::R_X86_64_PC32,
+        Reloc::IntelAbs4 => elf::reloc::R_X86_64_32,
+        Reloc::IntelAbs8 => elf::reloc::R_X86_64_64,
+        Reloc::IntelGotPCRel4 => elf::reloc::R_X86_64_GOTPCREL,
+        Reloc::IntelPLTRel4 => elf::reloc::R_X86_64_PLT32,
+        _ => panic!("unsupported reloc kind"),
+    }
+}
+
+fn translate_symbolkind(kind: SymbolKind) -> ImportKind {
+    match kind {
+        SymbolKind::Function => ImportKind::Function,
+        SymbolKind::Data => ImportKind::Data,
+    }
 }
 
 fn faerie_target(isa: &TargetIsa) -> Result<Target, String> {

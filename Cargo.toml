@@ -18,5 +18,6 @@ serde = "1.0.8"
 serde_derive = "1.0.8"
 term = "0.4.6"
 faerie = { git = "https://github.com/m4b/faerie" }
+goblin = { git = "https://github.com/m4b/goblin" }
 
 [workspace]
