@@ -69,8 +69,11 @@ impl<'a> fmt::Display for DisplayCompiledFunction<'a> {
                 write!(f, "0x{:02x}, ", byte)?;
             }
             write!(f, "\n")?;
-            for &(ref reloc, ref name, ref offset) in &compilation.relocs.relocs {
-                write!(f, "reloc: {}:{}@{}\n", reloc, name, offset)?;
+            for &(ref reloc, ref name, ref offset, addend) in &compilation.relocs.relocs {
+                match addend {
+                    0 => write!(f, "reloc: {}:{}@{}\n", reloc, name, offset)?,
+                    _ => write!(f, "reloc: {}:{}{}@{}\n", reloc, name, addend, offset)?,
+                }
             }
         }
         Ok(())
