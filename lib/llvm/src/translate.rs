@@ -94,7 +94,7 @@ pub fn translate_module(
                 let name = &func.il.dfg.ext_funcs[func_ref].name;
                 // If this function is defined inside the module, don't list it
                 // as an import.
-                let c_str = ffi::CString::new(result.strings.get_str(name.clone()))
+                let c_str = ffi::CString::new(result.strings.get_str(name))
                     .map_err(|err| err.description().to_string())?;
                 let llvm_str = c_str.as_ptr();
                 let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
@@ -106,7 +106,7 @@ pub fn translate_module(
                 if let ir::GlobalVarData::Sym { ref name } = func.il.global_vars[global_var] {
                     // If this global is defined inside the module, don't list it
                     // as an import.
-                    let c_str = ffi::CString::new(result.strings.get_str(name.clone()))
+                    let c_str = ffi::CString::new(result.strings.get_str(name))
                         .map_err(|err| err.description().to_string())?;
                     let llvm_str = c_str.as_ptr();
                     let llvm_global = unsafe { LLVMGetNamedGlobal(llvm_mod, llvm_str) };

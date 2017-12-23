@@ -4,6 +4,7 @@
 
 extern crate cretonne;
 extern crate cton_frontend;
+extern crate fnv;
 extern crate llvm_sys;
 extern crate libc;
 extern crate ordermap;
