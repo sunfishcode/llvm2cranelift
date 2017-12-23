@@ -13,18 +13,18 @@ impl StringTable {
         Self { names: FnvOrderSet::default() }
     }
 
-    // TODO: Can we avoid returning a clone of the string?
-    pub fn get_str(&mut self, extname: ir::ExternalName) -> String {
-        match extname {
+    pub fn get_str(&self, extname: &ir::ExternalName) -> &str {
+        match *extname {
             ir::ExternalName::User { namespace, index } => {
                 debug_assert!(namespace == 0, "alternate namespaces not yet implemented");
                 self.names
                     .get_index(index as usize)
                     .expect("name has not yet been declared")
                     .0
+                    .as_str()
             }
             _ => panic!("non-user names not yet implemented"),
-        }.clone()
+        }
     }
 
     // TODO: Can we minimize how often our users have to clone strings?

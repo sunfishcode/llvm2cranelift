@@ -82,7 +82,7 @@ fn handle_module(
 
     let ctx = create_llvm_context();
     let llvm_module = read_llvm(ctx, path.to_str().ok_or_else(|| "invalid utf8 in path")?)?;
-    let mut module = translate_module(llvm_module, isa)?;
+    let module = translate_module(llvm_module, isa)?;
 
     if flag_print {
         vprintln!(flag_verbose, "");
@@ -100,21 +100,21 @@ fn handle_module(
 
         for import in &module.imports {
             obj.import(
-                module.strings.get_str(import.0.clone()),
+                module.strings.get_str(&import.0),
                 translate_symbolkind(import.1),
             ).expect("faerie import");
         }
         for func in &module.functions {
             // FIXME: non-global functions.
             obj.declare(
-                module.strings.get_str(func.il.name.clone()),
+                module.strings.get_str(&func.il.name),
                 Decl::Function { global: true },
             ).expect("faerie declare");
         }
         // FIXME: non-global and non-writeable data.
         for data in &module.data_symbols {
             obj.declare(
-                module.strings.get_str(data.name.clone()),
+                module.strings.get_str(&data.name),
                 Decl::Data {
                     global: true,
                     writeable: true,
@@ -122,7 +122,7 @@ fn handle_module(
             ).expect("faerie declare");
         }
         for func in module.functions {
-            let func_name = module.strings.get_str(func.il.name);
+            let func_name = module.strings.get_str(&func.il.name);
             let compilation = func.compilation.unwrap();
             obj.define(&func_name, compilation.body).expect(
                 "faerie define",
@@ -134,7 +134,7 @@ fn handle_module(
                 // identify the caller by name each time.
                 // TODO: Faerie API: It's inconvenient to keep track of which
                 // symbols are imports and which aren't.
-                let name = module.strings.get_str(external_name.clone());
+                let name = module.strings.get_str(external_name);
                 obj.link_with(
                     Link {
                         from: &func_name,
@@ -149,7 +149,7 @@ fn handle_module(
             }
         }
         for data in module.data_symbols {
-            let data_name = module.strings.get_str(data.name.clone());
+            let data_name = module.strings.get_str(&data.name);
             obj.define(data_name, data.contents.clone()).expect(
                 "faerie define",
             );
