@@ -1,13 +1,16 @@
 use cretonne::ir;
+use fnv::FnvBuildHasher;
 use ordermap::OrderMap;
 
+type FnvOrderSet<T> = OrderMap<T, (), FnvBuildHasher>;
+
 pub struct StringTable {
-    names: OrderMap<String, ()>,
+    names: FnvOrderSet<String>,
 }
 
 impl StringTable {
     pub fn new() -> Self {
-        Self { names: OrderMap::new() }
+        Self { names: FnvOrderSet::default() }
     }
 
     // TODO: Can we avoid returning a clone of the string?
