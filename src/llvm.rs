@@ -128,12 +128,14 @@ fn handle_module(
                 "faerie define",
             );
             // TODO: reloc should derive from Copy
-            for &(ref reloc, ref external_name, offset) in &compilation.relocs.relocs {
+            for &(ref reloc, ref external_name, offset, addend) in &compilation.relocs.relocs {
                 // FIXME: What about other types of relocs?
                 // TODO: Faerie API: Seems like it might be inefficient to
                 // identify the caller by name each time.
                 // TODO: Faerie API: It's inconvenient to keep track of which
                 // symbols are imports and which aren't.
+                debug_assert!(addend as i32 as i64 == addend);
+                let addend = addend as i32;
                 let name = module.strings.get_str(external_name);
                 obj.link_with(
                     Link {
@@ -143,7 +145,7 @@ fn handle_module(
                     },
                     RelocOverride {
                         elftype: translate_reloc(reloc),
-                        addend: 0,
+                        addend: addend,
                     },
                 ).expect("faerie link");
             }
@@ -179,7 +181,7 @@ fn translate_reloc(reloc: &Reloc) -> u32 {
         Reloc::IntelPCRel4 => elf::reloc::R_X86_64_PC32,
         Reloc::IntelAbs4 => elf::reloc::R_X86_64_32,
         Reloc::IntelAbs8 => elf::reloc::R_X86_64_64,
-        Reloc::IntelGotPCRel4 => elf::reloc::R_X86_64_GOTPCREL,
+        Reloc::IntelGOTPCRel4 => elf::reloc::R_X86_64_GOTPCREL,
         Reloc::IntelPLTRel4 => elf::reloc::R_X86_64_PLT32,
         _ => panic!("unsupported reloc kind"),
     }

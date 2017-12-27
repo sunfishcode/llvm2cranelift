@@ -2,7 +2,7 @@ use cretonne::ir;
 use cretonne::binemit;
 
 pub struct RelocSink {
-    pub relocs: Vec<(binemit::Reloc, ir::ExternalName, binemit::CodeOffset)>,
+    pub relocs: Vec<(binemit::Reloc, ir::ExternalName, binemit::CodeOffset, binemit::Addend)>,
 }
 
 impl RelocSink {
@@ -26,8 +26,12 @@ impl<'func> binemit::RelocSink for RelocSink {
         offset: binemit::CodeOffset,
         reloc: binemit::Reloc,
         name: &ir::ExternalName,
+        addend: binemit::Addend,
     ) {
-        self.relocs.push((reloc, name.clone(), offset));
+        // TODO: How should addend be handled? Should it be added to
+        // offset and stored in self.relocs or carried through beside
+        // offset?
+        self.relocs.push((reloc, name.clone(), offset, addend));
     }
 
     fn reloc_jt(
