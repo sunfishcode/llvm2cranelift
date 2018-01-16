@@ -96,7 +96,7 @@ fn handle_module(
     } else {
         let isa: &TargetIsa = isa.expect("compilation requires a target isa");
 
-        let mut obj = Artifact::new(faerie_target(isa)?, Some(String::from(arg_output)));
+        let mut obj = Artifact::new(faerie_target(isa)?, String::from(arg_output));
 
         for import in &module.imports {
             obj.import(
