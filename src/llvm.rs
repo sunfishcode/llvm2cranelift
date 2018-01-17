@@ -87,6 +87,7 @@ fn handle_module(
     if flag_print {
         vprintln!(flag_verbose, "");
         for func in &module.functions {
+            println!("; {}", module.strings.get_str(&func.il.name));
             println!("{}", func.display(isa));
             vprintln!(flag_verbose, "");
         }

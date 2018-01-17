@@ -27,9 +27,10 @@ bb6:
 declare i32 @bar()
 
 $ llvm2cretonne -p test.ll
-function %foo(i32, i32) native {
+; foo
+function u0:0(i32, i32) native {
     sig0 = () -> i32 native
-    fn0 = sig0 %bar
+    fn0 = sig0 u0:1
 
 ebb1(v0: i32, v1: i32):
     v2 = icmp_imm ult v0, 4
