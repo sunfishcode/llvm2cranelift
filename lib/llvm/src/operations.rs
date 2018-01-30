@@ -39,7 +39,7 @@ pub fn translate_inst(
     llvm_bb: LLVMBasicBlockRef,
     llvm_inst: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) {
     let llvm_opcode = unsafe { LLVMGetInstructionOpcode(llvm_inst) };
     if let Some(result) = translate_operation(llvm_bb, llvm_opcode, llvm_inst, ctx, strings) {
@@ -54,7 +54,7 @@ fn translate_operation(
     llvm_opcode: LLVMOpcode,
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> Option<ir::Value> {
     Some(match llvm_opcode {
         LLVMPHI => {
@@ -545,7 +545,7 @@ fn translate_operation(
 fn materialize_constant(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> ir::Value {
     let llvm_kind = unsafe { LLVMGetValueKind(llvm_val) };
     match llvm_kind {
@@ -647,7 +647,7 @@ fn translate_intrinsic(
     llvm_inst: LLVMValueRef,
     llvm_callee: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> Option<ir::Value> {
     // LLVM's C API doesn't expose intrinsic IDs yet, so we match by name.
     let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
@@ -828,7 +828,7 @@ fn translate_intr_libcall(
     llvm_inst: LLVMValueRef,
     llvm_callee: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> ir::Value {
     let num_args = unsafe { LLVMGetNumArgOperands(llvm_inst) } as usize;
     let mut args = Vec::with_capacity(num_args);
@@ -859,7 +859,7 @@ fn translate_mem_intrinsic(
     name: &str,
     llvm_inst: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) {
     let pointer_type = translate_pointer_type(ctx.dl);
 
@@ -907,7 +907,7 @@ fn handle_phi_operands(
     llvm_bb: LLVMBasicBlockRef,
     llvm_succ: LLVMBasicBlockRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) {
     let mut defs = Vec::new();
 
@@ -945,7 +945,7 @@ fn translate_gep_index(
     pointer_type: ir::Type,
     index: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> (LLVMTypeRef, ir::Value, i64) {
     // TODO: We'd really want gep_type_iterator etc. here, but
     // LLVM's C API doesn't expose those currently.
@@ -1000,7 +1000,7 @@ fn jump(
     llvm_bb: LLVMBasicBlockRef,
     llvm_succ: LLVMBasicBlockRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) {
     if let Some(&ebb) = ctx.ebb_map.get(&llvm_succ) {
         handle_phi_operands(llvm_bb, llvm_succ, ctx, strings);
@@ -1058,7 +1058,7 @@ fn unsigned_cast(
 }
 
 /// Record a "use" of an LLVM IR value.
-fn use_val(llvm_val: LLVMValueRef, ctx: &mut Context, strings: &mut StringTable) -> ir::Value {
+fn use_val(llvm_val: LLVMValueRef, ctx: &mut Context, strings: &StringTable) -> ir::Value {
     if unsafe { LLVMIsConstant(llvm_val) } != 0 {
         materialize_constant(llvm_val, ctx, strings)
     } else {
@@ -1100,7 +1100,7 @@ fn def_val(llvm_val: LLVMValueRef, value: ir::Value, ctx: &mut Context) {
 fn unary_operands(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> ir::Value {
     use_val(unsafe { LLVMGetOperand(llvm_val, 0) }, ctx, strings)
 }
@@ -1124,7 +1124,7 @@ enum RegImmOperands {
 fn binary_operands_r_ri(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> RegImmOperands {
     // For most instructions, we don't need to check whether the lhs is
     // a constant, because constants are canonicalized the the rhs when
@@ -1151,7 +1151,7 @@ fn binary_operands_r_ri(
 fn binary_operands(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> (ir::Value, ir::Value) {
     (
         use_val(unsafe { LLVMGetOperand(llvm_val, 0) }, ctx, strings),
@@ -1163,7 +1163,7 @@ fn binary_operands(
 fn ternary_operands(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> (ir::Value, ir::Value, ir::Value) {
     (
         use_val(unsafe { LLVMGetOperand(llvm_val, 0) }, ctx, strings),

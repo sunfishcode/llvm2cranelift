@@ -13,6 +13,7 @@ impl StringTable {
         Self { names: FnvOrderSet::default() }
     }
 
+    /// Return the string name for a given cretonne `ExternalName`.
     pub fn get_str(&self, extname: &ir::ExternalName) -> &str {
         match *extname {
             ir::ExternalName::User { namespace, index } => {
@@ -27,11 +28,14 @@ impl StringTable {
         }
     }
 
-    // TODO: Can we minimize how often our users have to clone strings?
-    pub fn get_extname<S: Into<String>>(&mut self, string: S) -> ir::ExternalName {
-        let entry = self.names.entry(string.into());
-        let index = entry.index();
-        entry.or_insert(());
+    /// Enter a string name into the table.
+    pub fn declare_extname<S: Into<String>>(&mut self, string: S) {
+        self.names.insert(string.into(), ()).unwrap();
+    }
+
+    /// Return the cretonne `ExternalName` for a given string name.
+    pub fn get_extname<S: Into<String>>(&self, string: S) -> ir::ExternalName {
+        let index = self.names.get_full(&string.into()).unwrap().0;
         debug_assert!(index as u32 as usize == index);
         ir::ExternalName::user(0, index as u32)
     }

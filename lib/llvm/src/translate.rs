@@ -36,7 +36,7 @@ pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String>
 /// Translate from an llvm-sys C-style string to an `ir::FunctionName`.
 pub fn translate_symbol_name(
     charstar: *const libc::c_char,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> Result<ir::ExternalName, String> {
     Ok(strings.get_extname(translate_string(charstar)?))
 }
@@ -83,11 +83,25 @@ pub fn translate_module(
     let mut result = Module::new();
     let dl = unsafe { LLVMGetModuleDataLayout(llvm_mod) };
 
+    // Declare all names.
+    let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
+    while !llvm_func.is_null() {
+        let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
+        result.strings.declare_extname(translate_string(llvm_name)?);
+        llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
+    }
+    let mut llvm_global = unsafe { LLVMGetFirstGlobal(llvm_mod) };
+    while !llvm_global.is_null() {
+        let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
+        result.strings.declare_extname(translate_string(llvm_name)?);
+        llvm_global = unsafe { LLVMGetNextGlobal(llvm_global) };
+    }
+
     // Translate the Functions.
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     while !llvm_func.is_null() {
         if unsafe { LLVMIsDeclaration(llvm_func) } == 0 {
-            let func = translate_function(llvm_func, dl, isa, &mut result.strings)?;
+            let func = translate_function(llvm_func, dl, isa, &result.strings)?;
 
             // Collect externally referenced symbols for the module.
             for func_ref in func.il.dfg.ext_funcs.keys() {
@@ -128,7 +142,7 @@ pub fn translate_module(
             panic!("unimplemented: thread-local variables");
         }
         if unsafe { LLVMIsDeclaration(llvm_global) } == 0 {
-            let (name, contents) = translate_global(llvm_global, dl, &mut result.strings)?;
+            let (name, contents) = translate_global(llvm_global, dl, &result.strings)?;
             result.data_symbols.push(DataSymbol { name, contents });
         }
         llvm_global = unsafe { LLVMGetNextGlobal(llvm_global) };
@@ -143,7 +157,7 @@ pub fn translate_module(
 pub fn translate_global(
     llvm_global: LLVMValueRef,
     dl: LLVMTargetDataRef,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> Result<(ir::ExternalName, Vec<u8>), String> {
     let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
     let name = translate_symbol_name(llvm_name, strings)?;
@@ -184,7 +198,7 @@ pub fn translate_function(
     llvm_func: LLVMValueRef,
     dl: LLVMTargetDataRef,
     isa: Option<&TargetIsa>,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) -> Result<CompiledFunction, String> {
     // TODO: Reuse the context between separate invocations.
     let mut cton_ctx = cretonne::Context::new();
@@ -265,7 +279,7 @@ fn translate_bb(
     llvm_func: LLVMValueRef,
     llvm_bb: LLVMBasicBlockRef,
     ctx: &mut Context,
-    strings: &mut StringTable,
+    strings: &StringTable,
 ) {
     // Set up the Ebb as needed.
     if ctx.ebb_info.get(&llvm_bb).is_none() {
