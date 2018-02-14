@@ -397,7 +397,7 @@ fn translate_operation(
             let num_cases = unsafe { LLVMGetNumOperands(llvm_val) / 2 - 1 };
             let mut data = ir::JumpTableData::with_capacity(num_cases as usize);
             for i in 0..num_cases {
-                let llvm_key = unsafe { LLVMGetOperand(llvm_val, ((i as libc::c_uint + 1) * 2)) };
+                let llvm_key = unsafe { LLVMGetOperand(llvm_val, (i as libc::c_uint + 1) * 2) };
                 if unsafe { LLVMConstIntGetZExtValue(llvm_key) } != i as u64 {
                     panic!("unimplemented: switches with non-sequential cases");
                 }
