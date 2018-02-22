@@ -13,7 +13,7 @@ name = "cton_llvm"
 [dependencies]
 cretonne = { git = "https://github.com/stoklund/cretonne.git" }
 cretonne-frontend = { git = "https://github.com/stoklund/cretonne.git" }
-fnv = "1.0"
-llvm-sys = "50.0.0"
-libc = "0.2.32"
-ordermap = "0.3.2"
+fnv = "1.0.6"
+llvm-sys = "50.0.3"
+libc = "0.2.36"
+indexmap = "0.4.1"

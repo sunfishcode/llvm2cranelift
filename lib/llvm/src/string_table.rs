@@ -1,16 +1,16 @@
 use cretonne::ir;
 use fnv::FnvBuildHasher;
-use ordermap::OrderMap;
+use indexmap::IndexMap;
 
-type FnvOrderSet<T> = OrderMap<T, (), FnvBuildHasher>;
+type FnvIndexSet<T> = IndexMap<T, (), FnvBuildHasher>;
 
 pub struct StringTable {
-    names: FnvOrderSet<String>,
+    names: FnvIndexSet<String>,
 }
 
 impl StringTable {
     pub fn new() -> Self {
-        Self { names: FnvOrderSet::default() }
+        Self { names: FnvIndexSet::default() }
     }
 
     /// Return the string name for a given cretonne `ExternalName`.
@@ -30,7 +30,8 @@ impl StringTable {
 
     /// Enter a string name into the table.
     pub fn declare_extname<S: Into<String>>(&mut self, string: S) {
-        self.names.insert(string.into(), ()).unwrap();
+        let previous = self.names.insert(string.into(), ());
+        debug_assert!(previous.is_none());
     }
 
     /// Return the cretonne `ExternalName` for a given string name.

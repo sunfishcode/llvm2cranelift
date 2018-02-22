@@ -1097,11 +1097,7 @@ fn def_val(llvm_val: LLVMValueRef, value: ir::Value, ctx: &mut Context) {
 }
 
 /// Translate the operands for a unary operation.
-fn unary_operands(
-    llvm_val: LLVMValueRef,
-    ctx: &mut Context,
-    strings: &StringTable,
-) -> ir::Value {
+fn unary_operands(llvm_val: LLVMValueRef, ctx: &mut Context, strings: &StringTable) -> ir::Value {
     use_val(unsafe { LLVMGetOperand(llvm_val, 0) }, ctx, strings)
 }
 

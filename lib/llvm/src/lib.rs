@@ -7,7 +7,7 @@ extern crate cton_frontend;
 extern crate fnv;
 extern crate llvm_sys;
 extern crate libc;
-extern crate ordermap;
+extern crate indexmap;
 
 mod translate;
 mod operations;
