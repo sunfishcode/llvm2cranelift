@@ -11,13 +11,13 @@ path = "src/llvm2cretonne.rs"
 
 [dependencies]
 cretonne-llvm = { path = "lib/llvm" }
-cretonne = { git = "https://github.com/stoklund/cretonne.git"}
-cretonne-reader = { git = "https://github.com/stoklund/cretonne.git"}
+cretonne = "0.3.0"
+cretonne-reader = "0.3.0"
 docopt = "0.8.3"
 serde = "1.0.27"
 serde_derive = "1.0.27"
 term = "0.4.6"
-faerie = { git = "https://github.com/m4b/faerie" }
-goblin = { git = "https://github.com/m4b/goblin" }
+faerie = "0.1.0"
+goblin = "0.0.14"
 
 [workspace]

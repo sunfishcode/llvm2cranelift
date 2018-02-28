@@ -145,7 +145,7 @@ fn handle_module(
                         at: offset as usize,
                     },
                     RelocOverride {
-                        elftype: translate_reloc(reloc),
+                        reloc: translate_reloc(reloc),
                         addend: addend,
                     },
                 ).expect("faerie link");
