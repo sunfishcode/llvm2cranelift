@@ -441,7 +441,8 @@ fn translate_operation(
             if u64::from(size as u32) != size {
                 panic!("unimplemented: alloca size computation doesn't fit in u32");
             }
-            let stack_slot_data = ir::StackSlotData::new(ir::StackSlotKind::Local, size as u32);
+            let stack_slot_data =
+                ir::StackSlotData::new(ir::StackSlotKind::ExplicitSlot, size as u32);
             let stack_slot = ctx.builder.create_stack_slot(stack_slot_data);
             let pointer_type = translate_pointer_type(ctx.dl);
             ctx.builder.ins().stack_addr(pointer_type, stack_slot, 0)
