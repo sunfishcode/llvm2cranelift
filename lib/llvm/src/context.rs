@@ -62,7 +62,7 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
     pub fn new(
         func: &'a mut ir::Function,
-        il_builder: &'a mut cton_frontend::ILBuilder<Variable>,
+        il_builder: &'a mut cton_frontend::FunctionBuilderContext<Variable>,
         dl: LLVMTargetDataRef,
     ) -> Self {
         Self {

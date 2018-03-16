@@ -214,7 +214,7 @@ pub fn translate_function(
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
     {
-        let mut il_builder = cton_frontend::ILBuilder::<Variable>::new();
+        let mut il_builder = cton_frontend::FunctionBuilderContext::<Variable>::new();
         let mut ctx = Context::new(&mut cton_ctx.func, &mut il_builder, dl);
 
         // Make a pre-pass through the basic blocks to collect predecessor

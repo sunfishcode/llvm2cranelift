@@ -11,8 +11,8 @@ license = "Apache-2.0"
 name = "cton_llvm"
 
 [dependencies]
-cretonne = "0.3.4"
-cretonne-frontend = "0.3.4"
+cretonne = "0.4.0"
+cretonne-frontend = "0.4.0"
 fnv = "1.0.6"
 llvm-sys = "50.0.3"
 libc = "0.2.36"
