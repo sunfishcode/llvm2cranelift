@@ -1,5 +1,5 @@
-# llvm2cretonne
-LLVM IR to Cretonne translator
+# llvm2cranelift
+LLVM IR to Cranelift translator
 
 This is a work in progress which currently is complete enough to be usable as a
 testing and demonstration tool. It supports all the basic integer, floating-point
@@ -26,7 +26,7 @@ bb6:
 
 declare i32 @bar()
 
-$ llvm2cretonne -p test.ll
+$ llvm2cranelift -p test.ll
 ; foo
 function u0:0(i32, i32) native {
     sig0 = () -> i32 native
@@ -53,7 +53,7 @@ Features not yet implemented, but which could be reasonably implemented include:
  - integer types with unusual sizes
  - indirectbr
 
-Features not yet implemented that would require features that Cretonne does not
+Features not yet implemented that would require features that Cranelift does not
 yet fully implement include:
  - exception handling (invoke, landingpad, etc.)
  - dynamic alloca
@@ -84,19 +84,10 @@ implemented include:
    of the load is converted to boolean and then converted back.
 
 Also of note is that it doesn't currently translate LLVM's PHIs, SSA uses, and
-SSA defs directly into Cretonne; it instead just reports uses and defs to
-Cretonne's SSA builder, which then builds its own SSA form. That simplifies
+SSA defs directly into Cranelift; it instead just reports uses and defs to
+Cranelift's SSA builder, which then builds its own SSA form. That simplifies
 handling of basic blocks that aren't in RPO -- in layout order, we may see uses
 before we see their defs.
-
-## License
-
-Licensed under either of
-
- * Apache License, Version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or http://www.apache.org/licenses/LICENSE-2.0)
- * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
-
-at your option.
 
 ### Contribution
 
