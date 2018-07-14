@@ -2,20 +2,20 @@
 
 #![deny(missing_docs)]
 
-extern crate cranelift;
+extern crate cranelift_codegen;
 extern crate cranelift_frontend;
 extern crate fnv;
-extern crate llvm_sys;
-extern crate libc;
 extern crate indexmap;
+extern crate libc;
+extern crate llvm_sys;
 
-mod translate;
-mod operations;
 mod context;
 mod module;
+mod operations;
 mod reloc_sink;
-mod types;
 mod string_table;
+mod translate;
+mod types;
 
-pub use translate::{create_llvm_context, read_llvm, translate_module};
 pub use module::SymbolKind;
+pub use translate::{create_llvm_context, read_llvm, translate_module};

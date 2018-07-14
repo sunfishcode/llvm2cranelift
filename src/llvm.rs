@@ -5,14 +5,14 @@
 use cranelift_codegen::binemit::Reloc;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_llvm::{create_llvm_context, read_llvm, translate_module, SymbolKind};
-use faerie::{Artifact, Decl, Elf, ImportKind, Link, RelocOverride, Target};
+use faerie::{Artifact, Decl, ImportKind, Link, RelocOverride};
 use goblin::elf;
 use std::fmt::format;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str;
 use term;
-use utils::{parse_sets_and_isa, OwnedFlagsOrIsa};
+use utils::{parse_sets_and_triple, OwnedFlagsOrIsa};
 
 macro_rules! vprintln {
     ($x: expr, $($tts:tt)*) => {
@@ -42,7 +42,7 @@ pub fn run(
     // text file.
     flag_set.insert(0, "enable_verifier=1".to_string());
 
-    let parsed = parse_sets_and_isa(flag_set, flag_isa)?;
+    let parsed = parse_sets_and_triple(&flag_set, &flag_isa)?;
 
     for filename in files {
         let path = Path::new(&filename);
@@ -97,7 +97,7 @@ fn handle_module(
     } else {
         let isa: &TargetIsa = isa.expect("compilation requires a target isa");
 
-        let mut obj = Artifact::new(faerie_target(isa)?, String::from(arg_output));
+        let mut obj = Artifact::new(isa.triple().clone(), String::from(arg_output));
 
         for import in &module.imports {
             obj.import(
@@ -160,8 +160,7 @@ fn handle_module(
             .map_err(|x| format(format_args!("{}", x)))?;
 
         // FIXME: Make the format a parameter.
-        obj.write::<Elf>(file)
-            .map_err(|x| format(format_args!("{}", x)))?;
+        obj.write(file).map_err(|x| format(format_args!("{}", x)))?;
     }
 
     terminal.fg(term::color::GREEN).unwrap();
@@ -173,11 +172,11 @@ fn handle_module(
 // TODO: Reloc should by Copy
 fn translate_reloc(reloc: &Reloc) -> u32 {
     match *reloc {
-        Reloc::IntelPCRel4 => elf::reloc::R_X86_64_PC32,
-        Reloc::IntelAbs4 => elf::reloc::R_X86_64_32,
-        Reloc::IntelAbs8 => elf::reloc::R_X86_64_64,
-        Reloc::IntelGOTPCRel4 => elf::reloc::R_X86_64_GOTPCREL,
-        Reloc::IntelPLTRel4 => elf::reloc::R_X86_64_PLT32,
+        Reloc::X86PCRel4 => elf::reloc::R_X86_64_PC32,
+        Reloc::Abs4 => elf::reloc::R_X86_64_32,
+        Reloc::Abs8 => elf::reloc::R_X86_64_64,
+        Reloc::X86GOTPCRel4 => elf::reloc::R_X86_64_GOTPCREL,
+        Reloc::X86CallPLTRel4 => elf::reloc::R_X86_64_PLT32,
         _ => panic!("unsupported reloc kind"),
     }
 }
@@ -186,19 +185,5 @@ fn translate_symbolkind(kind: SymbolKind) -> ImportKind {
     match kind {
         SymbolKind::Function => ImportKind::Function,
         SymbolKind::Data => ImportKind::Data,
-    }
-}
-
-fn faerie_target(isa: &TargetIsa) -> Result<Target, String> {
-    let name = isa.name();
-    match name {
-        "intel" => Ok(if isa.flags().is_64bit() {
-            Target::X86_64
-        } else {
-            Target::X86
-        }),
-        "arm32" => Ok(Target::ARMv7),
-        "arm64" => Ok(Target::ARM64),
-        _ => Err(format!("unsupported isa: {}", name)),
     }
 }

@@ -1,5 +1,5 @@
-use cranelift::ir;
-use cranelift::isa::TargetIsa;
+use cranelift_codegen::ir;
+use cranelift_codegen::isa::TargetIsa;
 use std::fmt;
 
 use reloc_sink::RelocSink;
@@ -21,11 +21,7 @@ pub struct DataSymbol {
 
 impl fmt::Display for DataSymbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}: ",
-            self.name,
-        )?;
+        write!(f, "{}: ", self.name,)?;
         for byte in &self.contents {
             write!(f, "0x{:02x}, ", byte)?;
         }
@@ -59,11 +55,7 @@ pub struct DisplayCompiledFunction<'a> {
 
 impl<'a> fmt::Display for DisplayCompiledFunction<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}",
-            self.compiled_func.il.display(self.isa),
-        )?;
+        write!(f, "{}", self.compiled_func.il.display(self.isa),)?;
         if let Some(ref compilation) = self.compiled_func.compilation {
             for byte in &compilation.body {
                 write!(f, "0x{:02x}, ", byte)?;

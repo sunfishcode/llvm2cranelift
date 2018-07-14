@@ -1,11 +1,12 @@
 //! Translate types from LLVM IR to Cranelift IL.
 
-use cranelift::ir;
-use std::ptr;
-use llvm_sys::prelude::*;
+use cranelift_codegen::ir;
+use cranelift_codegen::settings::CallConv;
 use llvm_sys::core::*;
+use llvm_sys::prelude::*;
 use llvm_sys::target::*;
 use llvm_sys::LLVMTypeKind::*;
+use std::ptr;
 
 /// Return a Cranelift integer type with the given bit width.
 pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
@@ -35,9 +36,9 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
         LLVMFP128TypeKind => panic!("unimplemented: f128 type"),
         LLVMPPC_FP128TypeKind => panic!("unimplemented: double double type"),
         LLVMLabelTypeKind => panic!("unimplemented: label types"),
-        LLVMIntegerTypeKind => translate_integer_type(
-            unsafe { LLVMGetIntTypeWidth(llvm_ty) } as usize,
-        ),
+        LLVMIntegerTypeKind => {
+            translate_integer_type(unsafe { LLVMGetIntTypeWidth(llvm_ty) } as usize)
+        }
         LLVMFunctionTypeKind => panic!("use translate_sig to translate function types"),
         LLVMStructTypeKind => panic!("unimplemented: first-class struct types"),
         LLVMArrayTypeKind => panic!("unimplemented: first-class array types"),
@@ -58,7 +59,8 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
 pub fn translate_sig(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Signature {
     debug_assert_eq!(unsafe { LLVMGetTypeKind(llvm_ty) }, LLVMFunctionTypeKind);
 
-    let mut sig = ir::Signature::new(ir::CallConv::Native);
+    // TODO: Translate the calling convention.
+    let mut sig = ir::Signature::new(CallConv::SystemV);
 
     let num_llvm_params = unsafe { LLVMCountParamTypes(llvm_ty) } as usize;
     let mut llvm_params: Vec<LLVMTypeRef> = Vec::with_capacity(num_llvm_params);

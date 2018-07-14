@@ -14,6 +14,7 @@ path = "src/llvm2cranelift.rs"
 cranelift-llvm = { path = "lib/llvm" }
 cranelift-codegen = "0.15.0"
 cranelift-reader = "0.15.0"
+target-lexicon = "0.0.3"
 docopt = "0.8.3"
 serde = "1.0.27"
 serde_derive = "1.0.27"

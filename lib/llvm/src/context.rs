@@ -1,16 +1,16 @@
 //! Translation state.
 
-use cranelift;
-use cranelift::ir;
-use std::collections::HashMap;
+use cranelift_codegen;
+use cranelift_codegen::ir;
 use cranelift_frontend;
 use llvm_sys::prelude::*;
 use llvm_sys::target::*;
+use std::collections::HashMap;
 use std::u32;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Variable(pub u32);
-impl cranelift::entity::EntityRef for Variable {
+impl cranelift_codegen::entity::EntityRef for Variable {
     fn new(index: usize) -> Self {
         debug_assert!(index < (u32::MAX as usize));
         Variable(index as u32)

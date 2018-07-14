@@ -1,4 +1,4 @@
-use cranelift::ir;
+use cranelift_codegen::ir;
 use fnv::FnvBuildHasher;
 use indexmap::IndexMap;
 
@@ -10,7 +10,9 @@ pub struct StringTable {
 
 impl StringTable {
     pub fn new() -> Self {
-        Self { names: FnvIndexSet::default() }
+        Self {
+            names: FnvIndexSet::default(),
+        }
     }
 
     /// Return the string name for a given cranelift `ExternalName`.

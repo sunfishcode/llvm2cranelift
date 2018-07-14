@@ -1,26 +1,27 @@
 //! Translation from LLVM IR operations to Cranelift IL instructions.
 
-use cranelift::ir::{self, InstBuilder, Ebb};
+use cranelift_codegen::ir::{self, Ebb, InstBuilder};
+use cranelift_codegen::settings::CallConv;
+use libc;
+use llvm_sys::core::*;
+use llvm_sys::prelude::*;
+use llvm_sys::target::*;
+use llvm_sys::LLVMAtomicOrdering::*;
+use llvm_sys::LLVMCallConv::*;
+use llvm_sys::LLVMIntPredicate::*;
+use llvm_sys::LLVMOpcode::*;
+use llvm_sys::LLVMRealPredicate::*;
+use llvm_sys::LLVMTypeKind::*;
+use llvm_sys::LLVMValueKind::*;
+use llvm_sys::*;
 use std::collections::hash_map;
 use std::mem;
 use std::ptr;
-use llvm_sys::prelude::*;
-use llvm_sys::core::*;
-use llvm_sys::target::*;
-use llvm_sys::LLVMValueKind::*;
-use llvm_sys::LLVMOpcode::*;
-use llvm_sys::LLVMTypeKind::*;
-use llvm_sys::LLVMIntPredicate::*;
-use llvm_sys::LLVMRealPredicate::*;
-use llvm_sys::LLVMAtomicOrdering::*;
-use llvm_sys::LLVMCallConv::*;
-use llvm_sys::*;
-use libc;
 use string_table::StringTable;
 
-use translate::{translate_symbol_name, translate_string};
 use context::{Context, Variable};
-use types::{translate_type, translate_pointer_type, translate_sig};
+use translate::{translate_string, translate_symbol_name};
+use types::{translate_pointer_type, translate_sig, translate_type};
 
 /// Translate the incoming parameters for `llvm_func` into Cranelift values
 /// defined in the entry block.
@@ -61,13 +62,11 @@ fn translate_operation(
             // Nothing to do. Phis are handled elsewhere.
             return None;
         }
-        LLVMAdd => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().bxor(lhs, rhs),
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().iadd(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().iadd_imm(lhs, rhs),
-            }
-        }
+        LLVMAdd => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().bxor(lhs, rhs),
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().iadd(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().iadd_imm(lhs, rhs),
+        },
         LLVMSub => {
             // TODO: use irsub_imm when applicable.
             match binary_operands_r_ri(llvm_val, ctx, strings) {
@@ -77,98 +76,76 @@ fn translate_operation(
                     // Cranelift has no isub_imm; it uses iadd_imm with a
                     // negated immediate instead.
                     let raw_rhs: i64 = rhs.into();
-                    ctx.builder.ins().iadd_imm(
-                        lhs,
-                        ir::immediates::Imm64::from(
-                            raw_rhs.wrapping_neg(),
-                        ),
-                    )
+                    ctx.builder
+                        .ins()
+                        .iadd_imm(lhs, ir::immediates::Imm64::from(raw_rhs.wrapping_neg()))
                 }
             }
         }
-        LLVMMul => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().band(lhs, rhs),
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().imul(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().imul_imm(lhs, rhs),
+        LLVMMul => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().band(lhs, rhs),
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().imul(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().imul_imm(lhs, rhs),
+        },
+        LLVMSDiv => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, _rhs) => lhs,
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().sdiv(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().sdiv_imm(lhs, rhs),
+        },
+        LLVMUDiv => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, _rhs) => lhs,
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().udiv(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().udiv_imm(lhs, rhs),
+        },
+        LLVMSRem => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(_lhs, _rhs) => {
+                let ty = translate_type_of(llvm_val, ctx.dl);
+                ctx.builder.ins().bconst(ty, false)
             }
-        }
-        LLVMSDiv => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, _rhs) => lhs,
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().sdiv(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().sdiv_imm(lhs, rhs),
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().srem(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().srem_imm(lhs, rhs),
+        },
+        LLVMURem => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(_lhs, _rhs) => {
+                let ty = translate_type_of(llvm_val, ctx.dl);
+                ctx.builder.ins().bconst(ty, false)
             }
-        }
-        LLVMUDiv => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, _rhs) => lhs,
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().udiv(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().udiv_imm(lhs, rhs),
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().urem(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().urem_imm(lhs, rhs),
+        },
+        LLVMAShr => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, _rhs) => lhs,
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().sshr(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().sshr_imm(lhs, rhs),
+        },
+        LLVMLShr => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, _rhs) => lhs,
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().ushr(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().ushr_imm(lhs, rhs),
+        },
+        LLVMShl => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, _rhs) => lhs,
+            RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().ishl(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().ishl_imm(lhs, rhs),
+        },
+        LLVMAnd => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, rhs) | RegImmOperands::RegReg(lhs, rhs) => {
+                ctx.builder.ins().band(lhs, rhs)
             }
-        }
-        LLVMSRem => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(_lhs, _rhs) => {
-                    let ty = translate_type_of(llvm_val, ctx.dl);
-                    ctx.builder.ins().bconst(ty, false)
-                }
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().srem(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().srem_imm(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().band_imm(lhs, rhs),
+        },
+        LLVMOr => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, rhs) | RegImmOperands::RegReg(lhs, rhs) => {
+                ctx.builder.ins().bor(lhs, rhs)
             }
-        }
-        LLVMURem => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(_lhs, _rhs) => {
-                    let ty = translate_type_of(llvm_val, ctx.dl);
-                    ctx.builder.ins().bconst(ty, false)
-                }
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().urem(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().urem_imm(lhs, rhs),
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().bor_imm(lhs, rhs),
+        },
+        LLVMXor => match binary_operands_r_ri(llvm_val, ctx, strings) {
+            RegImmOperands::Bool(lhs, rhs) | RegImmOperands::RegReg(lhs, rhs) => {
+                ctx.builder.ins().bxor(lhs, rhs)
             }
-        }
-        LLVMAShr => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, _rhs) => lhs,
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().sshr(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().sshr_imm(lhs, rhs),
-            }
-        }
-        LLVMLShr => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, _rhs) => lhs,
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().ushr(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().ushr_imm(lhs, rhs),
-            }
-        }
-        LLVMShl => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, _rhs) => lhs,
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().ishl(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().ishl_imm(lhs, rhs),
-            }
-        }
-        LLVMAnd => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, rhs) |
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().band(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().band_imm(lhs, rhs),
-            }
-        }
-        LLVMOr => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, rhs) |
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().bor(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().bor_imm(lhs, rhs),
-            }
-        }
-        LLVMXor => {
-            match binary_operands_r_ri(llvm_val, ctx, strings) {
-                RegImmOperands::Bool(lhs, rhs) |
-                RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().bxor(lhs, rhs),
-                RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().bxor_imm(lhs, rhs),
-            }
-        }
+            RegImmOperands::RegImm(lhs, rhs) => ctx.builder.ins().bxor_imm(lhs, rhs),
+        },
         LLVMFAdd => {
             let (lhs, rhs) = binary_operands(llvm_val, ctx, strings);
             ctx.builder.ins().fadd(lhs, rhs)
@@ -188,7 +165,8 @@ fn translate_operation(
         LLVMFRem => {
             let (lhs, rhs) = binary_operands(llvm_val, ctx, strings);
             let ty = translate_type_of(llvm_val, ctx.dl);
-            let mut sig = ir::Signature::new(ir::CallConv::Native);
+            // TODO: Pick up the default target calling convention.
+            let mut sig = ir::Signature::new(CallConv::SystemV);
             sig.params.resize(2, ir::AbiParam::new(ty));
             sig.returns.push(ir::AbiParam::new(ty));
             let data = ir::ExtFuncData {
@@ -198,6 +176,7 @@ fn translate_operation(
                     _ => panic!("frem unimplemented for type {:?}", ty),
                 }),
                 signature: ctx.builder.import_signature(sig),
+                colocated: false, // TODO: Set this flag
             };
             let callee = ctx.builder.import_function(data);
             let call = ctx.builder.ins().call(callee, &[lhs, rhs]);
@@ -218,13 +197,9 @@ fn translate_operation(
             match condcode {
                 LLVMRealPredicateFalse => ctx.builder.ins().bconst(ir::types::B1, false),
                 LLVMRealPredicateTrue => ctx.builder.ins().bconst(ir::types::B1, true),
-                _ => {
-                    ctx.builder.ins().fcmp(
-                        translate_fcmp_code(condcode),
-                        lhs,
-                        rhs,
-                    )
-                }
+                _ => ctx.builder
+                    .ins()
+                    .fcmp(translate_fcmp_code(condcode), lhs, rhs),
             }
         }
         LLVMTrunc | LLVMZExt => {
@@ -250,11 +225,9 @@ fn translate_operation(
             let ty = translate_type_of(llvm_val, ctx.dl);
             if ty.is_bool() {
                 let sint = ctx.builder.ins().fcvt_to_sint(ir::types::I32, op);
-                ctx.builder.ins().icmp_imm(
-                    ir::condcodes::IntCC::NotEqual,
-                    sint,
-                    0,
-                )
+                ctx.builder
+                    .ins()
+                    .icmp_imm(ir::condcodes::IntCC::NotEqual, sint, 0)
             } else {
                 ctx.builder.ins().fcvt_to_sint(ty, op)
             }
@@ -264,11 +237,9 @@ fn translate_operation(
             let ty = translate_type_of(llvm_val, ctx.dl);
             if ty.is_bool() {
                 let uint = ctx.builder.ins().fcvt_to_uint(ir::types::I32, op);
-                ctx.builder.ins().icmp_imm(
-                    ir::condcodes::IntCC::NotEqual,
-                    uint,
-                    0,
-                )
+                ctx.builder
+                    .ins()
+                    .icmp_imm(ir::condcodes::IntCC::NotEqual, uint, 0)
             } else {
                 ctx.builder.ins().fcvt_to_uint(ty, op)
             }
@@ -369,20 +340,16 @@ fn translate_operation(
                     // It's valid for both destinations to be fallthroughs.
                     if llvm_next_bb != llvm_false_succ {
                         handle_phi_operands(llvm_bb, llvm_false_succ, ctx, strings);
-                        ctx.builder.ins().brz(
-                            cond,
-                            ctx.ebb_map[&llvm_false_succ],
-                            &[],
-                        );
+                        ctx.builder
+                            .ins()
+                            .brz(cond, ctx.ebb_map[&llvm_false_succ], &[]);
                     }
                     jump(llvm_bb, llvm_true_succ, ctx, strings);
                 } else {
                     handle_phi_operands(llvm_bb, llvm_true_succ, ctx, strings);
-                    ctx.builder.ins().brnz(
-                        cond,
-                        ctx.ebb_map[&llvm_true_succ],
-                        &[],
-                    );
+                    ctx.builder
+                        .ins()
+                        .brnz(cond, ctx.ebb_map[&llvm_true_succ], &[]);
                     jump(llvm_bb, llvm_false_succ, ctx, strings);
                 }
             } else {
@@ -436,8 +403,8 @@ fn translate_operation(
             if align > unsafe { LLVMABIAlignmentOfType(ctx.dl, llvm_allocty) } {
                 panic!("unimplemented: supernaturally aligned alloca");
             }
-            let size = unsafe { LLVMConstIntGetZExtValue(llvm_op) } *
-                unsafe { LLVMABISizeOfType(ctx.dl, llvm_allocty) };
+            let size = unsafe { LLVMConstIntGetZExtValue(llvm_op) }
+                * unsafe { LLVMABISizeOfType(ctx.dl, llvm_allocty) };
             if u64::from(size as u32) != size {
                 panic!("unimplemented: alloca size computation doesn't fit in u32");
             }
@@ -476,8 +443,8 @@ fn translate_operation(
             }
 
             let llvm_functy = unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) };
-            if unsafe { LLVMIsFunctionVarArg(llvm_functy) } != 0 &&
-                unsafe { LLVMCountParamTypes(llvm_functy) } as usize != num_args
+            if unsafe { LLVMIsFunctionVarArg(llvm_functy) } != 0
+                && unsafe { LLVMCountParamTypes(llvm_functy) } as usize != num_args
             {
                 panic!("unimplemented: variadic arguments");
             }
@@ -485,9 +452,9 @@ fn translate_operation(
             // Fast and cold are not ABI-exposed, so we can handle them however
             // we like. Just handle them the same as normal calls for now.
             let callconv = unsafe { LLVMGetInstructionCallConv(llvm_val) };
-            if callconv != LLVMCCallConv as libc::c_uint &&
-                callconv != LLVMFastCallConv as libc::c_uint &&
-                callconv != LLVMColdCallConv as libc::c_uint
+            if callconv != LLVMCCallConv as libc::c_uint
+                && callconv != LLVMFastCallConv as libc::c_uint
+                && callconv != LLVMColdCallConv as libc::c_uint
             {
                 panic!("unimplemented calling convention: {}", callconv);
             }
@@ -503,13 +470,16 @@ fn translate_operation(
                     strings,
                 ));
             }
-            let signature = ctx.builder.import_signature(
-                translate_sig(llvm_functy, ctx.dl),
-            );
+            let signature = ctx.builder
+                .import_signature(translate_sig(llvm_functy, ctx.dl));
             let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_callee) }, strings)
                 .expect("unimplemented: unusual function names");
             let call = if unsafe { LLVMGetValueKind(llvm_callee) } == LLVMFunctionValueKind {
-                let data = ir::ExtFuncData { name, signature };
+                let data = ir::ExtFuncData {
+                    name,
+                    signature,
+                    colocated: false, // TODO: Set this flag
+                };
                 let callee = ctx.builder.import_function(data);
                 ctx.builder.ins().call(callee, &args)
             } else {
@@ -558,13 +528,13 @@ fn materialize_constant(
             } else if ty.is_bool() {
                 ctx.builder.ins().bconst(ty, false)
             } else if ty == ir::types::F32 {
-                ctx.builder.ins().f32const(
-                    ir::immediates::Ieee32::with_bits(0),
-                )
+                ctx.builder
+                    .ins()
+                    .f32const(ir::immediates::Ieee32::with_bits(0))
             } else if ty == ir::types::F64 {
-                ctx.builder.ins().f64const(
-                    ir::immediates::Ieee64::with_bits(0),
-                )
+                ctx.builder
+                    .ins()
+                    .f64const(ir::immediates::Ieee64::with_bits(0))
             } else {
                 panic!("unimplemented undef type: {}", ty);
             }
@@ -591,46 +561,45 @@ fn materialize_constant(
             ));
             let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings)
                 .expect("unimplemented: unusual symbol names");
-            let callee = ctx.builder.import_function(
-                ir::ExtFuncData { name, signature },
-            );
+            let callee = ctx.builder.import_function(ir::ExtFuncData {
+                name,
+                signature,
+                colocated: false, // TODO: Set this flag
+            });
             let ty = translate_pointer_type(ctx.dl);
             ctx.builder.ins().func_addr(ty, callee)
         }
-        LLVMGlobalAliasValueKind |
-        LLVMGlobalVariableValueKind => {
+        LLVMGlobalAliasValueKind | LLVMGlobalVariableValueKind => {
             let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings)
                 .expect("unimplemented: unusual symbol names");
-            let global = ctx.builder.create_global_var(
-                ir::GlobalVarData::Sym { name },
-            );
+            let global = ctx.builder.create_global_value(ir::GlobalValueData::Sym {
+                name,
+                colocated: false, // TODO: Set this flag
+            });
             let ty = translate_pointer_type(ctx.dl);
-            ctx.builder.ins().global_addr(ty, global)
+            ctx.builder.ins().global_value(ty, global)
         }
         LLVMConstantFPValueKind => {
             let mut loses_info = [0];
             let val = unsafe { LLVMConstRealGetDouble(llvm_val, loses_info.as_mut_ptr()) };
             debug_assert_eq!(
-                loses_info[0],
-                0,
+                loses_info[0], 0,
                 "unimplemented floating-point constant value"
             );
             match translate_type_of(llvm_val, ctx.dl) {
                 ir::types::F32 => {
                     let f32val = val as f32;
-                    ctx.builder.ins().f32const(
-                        ir::immediates::Ieee32::with_bits(
-                            unsafe { mem::transmute(f32val) },
-                        ),
-                    )
+                    ctx.builder
+                        .ins()
+                        .f32const(ir::immediates::Ieee32::with_bits(unsafe {
+                            mem::transmute(f32val)
+                        }))
                 }
-                ir::types::F64 => {
-                    ctx.builder.ins().f64const(
-                        ir::immediates::Ieee64::with_bits(
-                            unsafe { mem::transmute(val) },
-                        ),
-                    )
-                }
+                ir::types::F64 => ctx.builder
+                    .ins()
+                    .f64const(ir::immediates::Ieee64::with_bits(unsafe {
+                        mem::transmute(val)
+                    })),
                 ty => panic!("unimplemented floating-point constant type: {}", ty),
             }
         }
@@ -654,53 +623,50 @@ fn translate_intrinsic(
     let name = translate_string(unsafe { LLVMGetValueName(llvm_callee) })
         .expect("unimplemented: unusual function names");
     Some(match name.as_ref() {
-        "llvm.dbg.addr" |
-        "llvm.dbg.declare" |
-        "llvm.dbg.value" |
-        "llvm.prefetch" |
-        "llvm.assume" |
-        "llvm.lifetime.start.p0i8" |
-        "llvm.lifetime.end.p0i8" |
-        "llvm.invariant.start.p0i8" |
-        "llvm.invariant.end.p0i8" |
-        "llvm.sideeffect" |
-        "llvm.codeview.annotation" => {
+        "llvm.dbg.addr"
+        | "llvm.dbg.declare"
+        | "llvm.dbg.value"
+        | "llvm.prefetch"
+        | "llvm.assume"
+        | "llvm.lifetime.start.p0i8"
+        | "llvm.lifetime.end.p0i8"
+        | "llvm.invariant.start.p0i8"
+        | "llvm.invariant.end.p0i8"
+        | "llvm.sideeffect"
+        | "llvm.codeview.annotation" => {
             // For now, just discard this informtion.
             return None;
         }
-        "llvm.ssa_copy.i1" |
-        "llvm.ssa_copy.i8" |
-        "llvm.ssa_copy.i16" |
-        "llvm.ssa_copy.i32" |
-        "llvm.ssa_copy.i64" |
-        "llvm.ssa_copy.f32" |
-        "llvm.ssa_copy.f64" |
-        "llvm.annotation.i8" |
-        "llvm.annotation.i16" |
-        "llvm.annotation.i32" |
-        "llvm.annotation.i64" |
-        "llvm.invariant.group.barrier" |
-        "llvm.expect.i1" |
-        "llvm.expect.i8" |
-        "llvm.expect.i16" |
-        "llvm.expect.i32" |
-        "llvm.expect.i64" => {
+        "llvm.ssa_copy.i1"
+        | "llvm.ssa_copy.i8"
+        | "llvm.ssa_copy.i16"
+        | "llvm.ssa_copy.i32"
+        | "llvm.ssa_copy.i64"
+        | "llvm.ssa_copy.f32"
+        | "llvm.ssa_copy.f64"
+        | "llvm.annotation.i8"
+        | "llvm.annotation.i16"
+        | "llvm.annotation.i32"
+        | "llvm.annotation.i64"
+        | "llvm.invariant.group.barrier"
+        | "llvm.expect.i1"
+        | "llvm.expect.i8"
+        | "llvm.expect.i16"
+        | "llvm.expect.i32"
+        | "llvm.expect.i64" => {
             // For now, just discard the extra informtion these intrinsics
             // provide and just return their first operand.
             unary_operands(llvm_inst, ctx, strings)
         }
-        "llvm.objectsize.i8.p0i8" |
-        "llvm.objectsize.i16.p0i8" |
-        "llvm.objectsize.i32.p0i8" |
-        "llvm.objectsize.i64.p0i8" => {
+        "llvm.objectsize.i8.p0i8"
+        | "llvm.objectsize.i16.p0i8"
+        | "llvm.objectsize.i32.p0i8"
+        | "llvm.objectsize.i64.p0i8" => {
             let min = unsafe { LLVMConstIntGetZExtValue(LLVMGetOperand(llvm_inst, 1)) } != 0;
             let ty = translate_type_of(llvm_inst, ctx.dl);
-            ctx.builder.ins().iconst(
-                ty,
-                ir::immediates::Imm64::new(
-                    if min { 0 } else { -1 },
-                ),
-            )
+            ctx.builder
+                .ins()
+                .iconst(ty, ir::immediates::Imm64::new(if min { 0 } else { -1 }))
         }
         "llvm.sqrt.f32" | "llvm.sqrt.f64" => {
             let op = unary_operands(llvm_inst, ctx, strings);
@@ -710,8 +676,7 @@ fn translate_intrinsic(
             let op = unary_operands(llvm_inst, ctx, strings);
             ctx.builder.ins().fabs(op)
         }
-        "llvm.copysign.f32" |
-        "llvm.copysign.f64" => {
+        "llvm.copysign.f32" | "llvm.copysign.f64" => {
             let (lhs, rhs) = binary_operands(llvm_inst, ctx, strings);
             ctx.builder.ins().fcopysign(lhs, rhs)
         }
@@ -727,8 +692,7 @@ fn translate_intrinsic(
             let op = unary_operands(llvm_inst, ctx, strings);
             ctx.builder.ins().trunc(op)
         }
-        "llvm.nearbyint.f32" |
-        "llvm.nearbyint.f64" => {
+        "llvm.nearbyint.f32" | "llvm.nearbyint.f64" => {
             let op = unary_operands(llvm_inst, ctx, strings);
             ctx.builder.ins().nearest(op)
         }
@@ -761,8 +725,7 @@ fn translate_intrinsic(
             ctx.builder.switch_to_block(ebb);
             return None;
         }
-        "llvm.fmuladd.f32" |
-        "llvm.fmuladd.f64" => {
+        "llvm.fmuladd.f32" | "llvm.fmuladd.f64" => {
             // Cranelift currently has no fma instruction, so just lower these
             // as non-fused operations.
             let (a, b, c) = ternary_operands(llvm_inst, ctx, strings);
@@ -797,24 +760,24 @@ fn translate_intrinsic(
         "llvm.round.f64" => translate_intr_libcall("round", llvm_inst, llvm_callee, ctx, strings),
         "llvm.fma.f32" => translate_intr_libcall("fmaf", llvm_inst, llvm_callee, ctx, strings),
         "llvm.fma.f64" => translate_intr_libcall("fma", llvm_inst, llvm_callee, ctx, strings),
-        "llvm.memcpy.p0i8.p0i8.i8" |
-        "llvm.memcpy.p0i8.p0i8.i16" |
-        "llvm.memcpy.p0i8.p0i8.i32" |
-        "llvm.memcpy.p0i8.p0i8.i64" => {
+        "llvm.memcpy.p0i8.p0i8.i8"
+        | "llvm.memcpy.p0i8.p0i8.i16"
+        | "llvm.memcpy.p0i8.p0i8.i32"
+        | "llvm.memcpy.p0i8.p0i8.i64" => {
             translate_mem_intrinsic("memcpy", llvm_inst, ctx, strings);
             return None;
         }
-        "llvm.memmove.p0i8.p0i8.i8" |
-        "llvm.memmove.p0i8.p0i8.i16" |
-        "llvm.memmove.p0i8.p0i8.i32" |
-        "llvm.memmove.p0i8.p0i8.i64" => {
+        "llvm.memmove.p0i8.p0i8.i8"
+        | "llvm.memmove.p0i8.p0i8.i16"
+        | "llvm.memmove.p0i8.p0i8.i32"
+        | "llvm.memmove.p0i8.p0i8.i64" => {
             translate_mem_intrinsic("memmove", llvm_inst, ctx, strings);
             return None;
         }
-        "llvm.memset.p0i8.i8" |
-        "llvm.memset.p0i8.i16" |
-        "llvm.memset.p0i8.i32" |
-        "llvm.memset.p0i8.i64" => {
+        "llvm.memset.p0i8.i8"
+        | "llvm.memset.p0i8.i16"
+        | "llvm.memset.p0i8.i32"
+        | "llvm.memset.p0i8.i64" => {
             translate_mem_intrinsic("memset", llvm_inst, ctx, strings);
             return None;
         }
@@ -847,7 +810,11 @@ fn translate_intr_libcall(
         unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
         ctx.dl,
     ));
-    let data = ir::ExtFuncData { name, signature };
+    let data = ir::ExtFuncData {
+        name,
+        signature,
+        colocated: false, // TODO: Set the colocated flag based on the visibility.
+    };
     let callee = ctx.builder.import_function(data);
     let call = ctx.builder.ins().call(callee, &args);
     let results = ctx.builder.inst_results(call);
@@ -888,7 +855,8 @@ fn translate_mem_intrinsic(
     let args = [dst_arg, src_arg, len_arg];
 
     let funcname = strings.get_extname(name);
-    let mut sig = ir::Signature::new(ir::CallConv::Native);
+    // TODO: Translate the calling convention.
+    let mut sig = ir::Signature::new(CallConv::SystemV);
     sig.params.resize(3, ir::AbiParam::new(pointer_type));
     if name == "memset" {
         sig.params[1] = ir::AbiParam::new(ir::types::I32);
@@ -898,6 +866,7 @@ fn translate_mem_intrinsic(
     let data = ir::ExtFuncData {
         name: funcname,
         signature,
+        colocated: false, // TODO: Set the colocated flag based on the visibility.
     };
     let callee = ctx.builder.import_function(data);
     ctx.builder.ins().call(callee, &args);
@@ -982,10 +951,9 @@ fn translate_gep_index(
             }
 
             if size != 1 {
-                x = ctx.builder.ins().imul_imm(
-                    x,
-                    ir::immediates::Imm64::new(size as i64),
-                );
+                x = ctx.builder
+                    .ins()
+                    .imul_imm(x, ir::immediates::Imm64::new(size as i64));
             }
 
             (x, llvm_eltty)
@@ -1041,11 +1009,9 @@ fn unsigned_cast(
     } else if from.bits() > to.bits() {
         if to.is_bool() {
             let band = ctx.builder.ins().band_imm(op, 1);
-            ctx.builder.ins().icmp_imm(
-                ir::condcodes::IntCC::NotEqual,
-                band,
-                0,
-            )
+            ctx.builder
+                .ins()
+                .icmp_imm(ir::condcodes::IntCC::NotEqual, band, 0)
         } else {
             ctx.builder.ins().ireduce(to, op)
         }
@@ -1229,8 +1195,8 @@ fn translate_memflags(
     // LLVM IR has UB.
     flags.set_notrap();
 
-    if u64::from(unsafe { LLVMGetAlignment(llvm_inst) }) >=
-        unsafe { LLVMABISizeOfType(ctx.dl, llvm_ty) }
+    if u64::from(unsafe { LLVMGetAlignment(llvm_inst) })
+        >= unsafe { LLVMABISizeOfType(ctx.dl, llvm_ty) }
     {
         flags.set_aligned();
     }

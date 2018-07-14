@@ -1,6 +1,7 @@
 //! Translation from LLVM IR to Cranelift IL.
 
 use cranelift_codegen;
+use cranelift_codegen::binemit::NullTrapSink;
 use cranelift_codegen::ir;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend;
@@ -112,8 +113,13 @@ pub fn translate_module(
                     result.imports.push((name.clone(), SymbolKind::Function));
                 }
             }
-            for global_var in func.il.global_vars.keys() {
-                if let ir::GlobalVarData::Sym { ref name } = func.il.global_vars[global_var] {
+            for global_var in func.il.global_values.keys() {
+                // TODO: Use the colocated field.
+                if let ir::GlobalValueData::Sym {
+                    ref name,
+                    colocated: _colocated,
+                } = func.il.global_values[global_var]
+                {
                     // If this global is defined inside the module, don't list it
                     // as an import.
                     let c_str = ffi::CString::new(result.strings.get_str(name))
@@ -195,7 +201,7 @@ pub fn translate_function(
     strings: &StringTable,
 ) -> Result<CompiledFunction, String> {
     // TODO: Reuse the context between separate invocations.
-    let mut clif_ctx = cranelift::Context::new();
+    let mut clif_ctx = cranelift_codegen::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
     clif_ctx.func.name = translate_symbol_name(llvm_name, strings)?;
     clif_ctx.func.signature =
@@ -222,13 +228,15 @@ pub fn translate_function(
     }
 
     if let Some(isa) = isa {
-        let code_size = clif_ctx
-            .compile(isa)
-            .map_err(|err| err.description().to_string())?;
+        let code_size = clif_ctx.compile(isa).map_err(|err| err.to_string())?;
         let mut code_buf: Vec<u8> = Vec::with_capacity(code_size as usize);
         let mut reloc_sink = RelocSink::new();
+        let mut trap_sink = NullTrapSink {};
         code_buf.resize(code_size as usize, 0);
-        clif_ctx.emit_to_memory(code_buf.as_mut_ptr(), &mut reloc_sink, isa);
+        // TODO: Use the safe interface instead.
+        unsafe {
+            clif_ctx.emit_to_memory(isa, code_buf.as_mut_ptr(), &mut reloc_sink, &mut trap_sink);
+        }
 
         Ok(CompiledFunction {
             il: clif_ctx.func,
