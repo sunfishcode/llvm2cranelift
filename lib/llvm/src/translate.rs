@@ -1,36 +1,34 @@
-//! Translation from LLVM IR to Cretonne IL.
+//! Translation from LLVM IR to Cranelift IL.
 
-use cretonne;
-use cretonne::ir;
-use cretonne::isa::TargetIsa;
-use cton_frontend;
-use std::collections::hash_map;
-use std::error::Error;
-use std::str;
-use std::ptr;
-use std::ffi;
-use llvm_sys::prelude::*;
+use cranelift_codegen;
+use cranelift_codegen::ir;
+use cranelift_codegen::isa::TargetIsa;
+use cranelift_frontend;
+use libc;
 use llvm_sys::core::*;
 use llvm_sys::ir_reader::*;
+use llvm_sys::prelude::*;
 use llvm_sys::target::*;
 use llvm_sys::LLVMValueKind::*;
-use libc;
+use std::collections::hash_map;
+use std::error::Error;
+use std::ffi;
+use std::ptr;
+use std::str;
 use string_table::StringTable;
 
-use operations::{translate_function_params, translate_inst};
 use context::{Context, EbbInfo, Variable};
-use module::{Module, CompiledFunction, DataSymbol, Compilation, SymbolKind};
+use module::{Compilation, CompiledFunction, DataSymbol, Module, SymbolKind};
+use operations::{translate_function_params, translate_inst};
 use reloc_sink::RelocSink;
 use types::translate_sig;
 
 /// Translate from an llvm-sys C-style string to a Rust String.
 pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String> {
-    Ok(
-        unsafe { ffi::CStr::from_ptr(charstar) }
-            .to_str()
-            .map_err(|err| err.description().to_string())?
-            .to_string(),
-    )
+    Ok(unsafe { ffi::CStr::from_ptr(charstar) }
+        .to_str()
+        .map_err(|err| err.description().to_string())?
+        .to_string())
 }
 
 /// Translate from an llvm-sys C-style string to an `ir::FunctionName`.
@@ -50,9 +48,7 @@ pub fn create_llvm_context() -> LLVMContextRef {
 pub fn read_llvm(llvm_ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, String> {
     let mut msg = ptr::null_mut();
     let mut buf = ptr::null_mut();
-    let c_str = ffi::CString::new(path).map_err(
-        |err| err.description().to_string(),
-    )?;
+    let c_str = ffi::CString::new(path).map_err(|err| err.description().to_string())?;
     let llvm_name = c_str.as_ptr();
     if unsafe { LLVMCreateMemoryBufferWithContentsOfFile(llvm_name, &mut buf, &mut msg) } != 0 {
         return Err(format!(
@@ -73,7 +69,7 @@ pub fn read_llvm(llvm_ctx: LLVMContextRef, path: &str) -> Result<LLVMModuleRef, 
     }
 }
 
-/// Translate an LLVM module into Cretonne IL.
+/// Translate an LLVM module into Cranelift IL.
 pub fn translate_module(
     llvm_mod: LLVMModuleRef,
     isa: Option<&TargetIsa>,
@@ -108,11 +104,8 @@ pub fn translate_module(
                 let name = &func.il.dfg.ext_funcs[func_ref].name;
                 // If this function is defined inside the module, don't list it
                 // as an import.
-                let c_str = ffi::CString::new(result.strings.get_str(name)).map_err(
-                    |err| {
-                        err.description().to_string()
-                    },
-                )?;
+                let c_str = ffi::CString::new(result.strings.get_str(name))
+                    .map_err(|err| err.description().to_string())?;
                 let llvm_str = c_str.as_ptr();
                 let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
                 if llvm_func.is_null() || unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
@@ -123,11 +116,8 @@ pub fn translate_module(
                 if let ir::GlobalVarData::Sym { ref name } = func.il.global_vars[global_var] {
                     // If this global is defined inside the module, don't list it
                     // as an import.
-                    let c_str = ffi::CString::new(result.strings.get_str(name)).map_err(
-                        |err| {
-                            err.description().to_string()
-                        },
-                    )?;
+                    let c_str = ffi::CString::new(result.strings.get_str(name))
+                        .map_err(|err| err.description().to_string())?;
                     let llvm_str = c_str.as_ptr();
                     let llvm_global = unsafe { LLVMGetNamedGlobal(llvm_mod, llvm_str) };
                     if llvm_global.is_null() || unsafe { LLVMIsDeclaration(llvm_global) } != 0 {
@@ -159,7 +149,7 @@ pub fn translate_module(
     Ok(result)
 }
 
-/// Translate the GlobalVariable `llvm_global` to Cretonne IL.
+/// Translate the GlobalVariable `llvm_global` to Cranelift IL.
 pub fn translate_global(
     llvm_global: LLVMValueRef,
     dl: LLVMTargetDataRef,
@@ -188,18 +178,16 @@ pub fn translate_global(
                 contents.push(0u8);
             }
         }
-        _ => {
-            panic!(
-                "unimplemented constant initializer value kind: {:?}",
-                llvm_kind
-            )
-        }
+        _ => panic!(
+            "unimplemented constant initializer value kind: {:?}",
+            llvm_kind
+        ),
     }
 
     Ok((name, contents))
 }
 
-/// Translate the Function `llvm_func` to Cretonne IL.
+/// Translate the Function `llvm_func` to Cranelift IL.
 pub fn translate_function(
     llvm_func: LLVMValueRef,
     dl: LLVMTargetDataRef,
@@ -207,15 +195,15 @@ pub fn translate_function(
     strings: &StringTable,
 ) -> Result<CompiledFunction, String> {
     // TODO: Reuse the context between separate invocations.
-    let mut cton_ctx = cretonne::Context::new();
+    let mut clif_ctx = cranelift::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-    cton_ctx.func.name = translate_symbol_name(llvm_name, strings)?;
-    cton_ctx.func.signature =
+    clif_ctx.func.name = translate_symbol_name(llvm_name, strings)?;
+    clif_ctx.func.signature =
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
     {
-        let mut il_builder = cton_frontend::FunctionBuilderContext::<Variable>::new();
-        let mut ctx = Context::new(&mut cton_ctx.func, &mut il_builder, dl);
+        let mut il_builder = cranelift_frontend::FunctionBuilderContext::<Variable>::new();
+        let mut ctx = Context::new(&mut clif_ctx.func, &mut il_builder, dl);
 
         // Make a pre-pass through the basic blocks to collect predecessor
         // information, which LLVM's C API doesn't expose directly.
@@ -234,16 +222,16 @@ pub fn translate_function(
     }
 
     if let Some(isa) = isa {
-        let code_size = cton_ctx.compile(isa).map_err(
-            |err| err.description().to_string(),
-        )?;
+        let code_size = clif_ctx
+            .compile(isa)
+            .map_err(|err| err.description().to_string())?;
         let mut code_buf: Vec<u8> = Vec::with_capacity(code_size as usize);
         let mut reloc_sink = RelocSink::new();
         code_buf.resize(code_size as usize, 0);
-        cton_ctx.emit_to_memory(code_buf.as_mut_ptr(), &mut reloc_sink, isa);
+        clif_ctx.emit_to_memory(code_buf.as_mut_ptr(), &mut reloc_sink, isa);
 
         Ok(CompiledFunction {
-            il: cton_ctx.func,
+            il: clif_ctx.func,
             compilation: Some(Compilation {
                 body: code_buf,
                 relocs: reloc_sink,
@@ -251,7 +239,7 @@ pub fn translate_function(
         })
     } else {
         Ok(CompiledFunction {
-            il: cton_ctx.func,
+            il: clif_ctx.func,
             compilation: None,
         })
     }
@@ -266,9 +254,9 @@ fn prepare_for_bb(llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
     for i in 0..num_succs {
         let llvm_succ = unsafe { LLVMGetSuccessor(term, i) };
         {
-            let info = ctx.ebb_info.entry(llvm_succ).or_insert_with(
-                EbbInfo::default,
-            );
+            let info = ctx.ebb_info
+                .entry(llvm_succ)
+                .or_insert_with(EbbInfo::default);
             info.num_preds_left += 1;
         }
         // If the block is reachable by branch (and not fallthrough), or by
@@ -280,7 +268,7 @@ fn prepare_for_bb(llvm_bb: LLVMBasicBlockRef, ctx: &mut Context) {
     }
 }
 
-/// Translate the contents of `llvm_bb` to Cretonne IL instructions.
+/// Translate the contents of `llvm_bb` to Cranelift IL instructions.
 fn translate_bb(
     llvm_func: LLVMValueRef,
     llvm_bb: LLVMBasicBlockRef,

@@ -1,24 +1,24 @@
 [package]
-name = "llvm2cretonne-tools"
+name = "llvm2cranelift-tools"
 version = "0.0.0"
-authors = ["The Cretonne Project Developers"]
+authors = ["The Cranelift Project Developers"]
 publish = false
 repository = "https://github.com/sunfishcode/llvm2cranelift"
 license = "Apache-2.0 WITH LLVM-exception"
 
 [[bin]]
-name = "llvm2cretonne"
-path = "src/llvm2cretonne.rs"
+name = "llvm2cranelift"
+path = "src/llvm2cranelift.rs"
 
 [dependencies]
-cretonne-llvm = { path = "lib/llvm" }
-cretonne = "0.4.0"
-cretonne-reader = "0.4.0"
+cranelift-llvm = { path = "lib/llvm" }
+cranelift-codegen = "0.15.0"
+cranelift-reader = "0.15.0"
 docopt = "0.8.3"
 serde = "1.0.27"
 serde_derive = "1.0.27"
 term = "0.4.6"
-faerie = "0.1.0"
+faerie = "0.4.3"
 goblin = "0.0.14"
 
 [workspace]

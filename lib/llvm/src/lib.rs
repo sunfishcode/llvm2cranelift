@@ -1,9 +1,9 @@
-//! Translator from LLVM IR to Cretonne IL.
+//! Translator from LLVM IR to Cranelift IL.
 
 #![deny(missing_docs)]
 
-extern crate cretonne;
-extern crate cton_frontend;
+extern crate cranelift;
+extern crate cranelift_frontend;
 extern crate fnv;
 extern crate llvm_sys;
 extern crate libc;

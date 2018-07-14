@@ -1,9 +1,9 @@
 //! Utility functions.
 
-use cretonne::isa::TargetIsa;
-use cretonne::settings::{self, FlagsOrIsa};
-use cretonne::isa;
-use cton_reader::{parse_options, Location};
+use cranelift_codegen::isa;
+use cranelift_codegen::isa::TargetIsa;
+use cranelift_codegen::settings::{self, FlagsOrIsa};
+use cranelift_reader::{parse_options, Location};
 
 /// Like `FlagsOrIsa`, but holds ownership.
 pub enum OwnedFlagsOrIsa {

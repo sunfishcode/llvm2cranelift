@@ -1,18 +1,18 @@
 [package]
-name = "cretonne-llvm"
+name = "cranelift-llvm"
 version = "0.0.0"
-authors = ["The Cretonne Project Developers"]
+authors = ["The Cranelift Project Developers"]
 publish = false
-description = "Translator from LLVM IR to Cretonne IL"
-repository = "https://github.com/stoklund/cretonne"
+description = "Translator from LLVM IR to Cranelift IL"
+repository = "https://github.com/sunfishcode/cranelift"
 license = "Apache-2.0 WITH LLVM-exception"
 
 [lib]
-name = "cton_llvm"
+name = "cranelift_llvm"
 
 [dependencies]
-cretonne = "0.4.0"
-cretonne-frontend = "0.4.0"
+cranelift-codegen = "0.15.0"
+cranelift-frontend = "0.15.0"
 fnv = "1.0.6"
 llvm-sys = "50.0.3"
 libc = "0.2.36"

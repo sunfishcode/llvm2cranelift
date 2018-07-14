@@ -1,5 +1,5 @@
-use cretonne::ir;
-use cretonne::binemit;
+use cranelift::ir;
+use cranelift::binemit;
 
 pub struct RelocSink {
     pub relocs: Vec<(binemit::Reloc, ir::ExternalName, binemit::CodeOffset, binemit::Addend)>,

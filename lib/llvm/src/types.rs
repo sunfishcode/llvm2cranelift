@@ -1,13 +1,13 @@
-//! Translate types from LLVM IR to Cretonne IL.
+//! Translate types from LLVM IR to Cranelift IL.
 
-use cretonne::ir;
+use cranelift::ir;
 use std::ptr;
 use llvm_sys::prelude::*;
 use llvm_sys::core::*;
 use llvm_sys::target::*;
 use llvm_sys::LLVMTypeKind::*;
 
-/// Return a Cretonne integer type with the given bit width.
+/// Return a Cranelift integer type with the given bit width.
 pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
     match bitwidth {
         1 => ir::types::B1,
@@ -19,12 +19,12 @@ pub fn translate_integer_type(bitwidth: usize) -> ir::Type {
     }
 }
 
-/// Return the Cretonne integer type for a pointer.
+/// Return the Cranelift integer type for a pointer.
 pub fn translate_pointer_type(dl: LLVMTargetDataRef) -> ir::Type {
     translate_integer_type(unsafe { LLVMPointerSize(dl) * 8 } as usize)
 }
 
-/// Translate an LLVM first-class type into a Cretonne type.
+/// Translate an LLVM first-class type into a Cranelift type.
 pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
     match unsafe { LLVMGetTypeKind(llvm_ty) } {
         LLVMVoidTypeKind => ir::types::VOID,
@@ -54,7 +54,7 @@ pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
     }
 }
 
-/// Translate an LLVM function type into a Cretonne signature.
+/// Translate an LLVM function type into a Cranelift signature.
 pub fn translate_sig(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Signature {
     debug_assert_eq!(unsafe { LLVMGetTypeKind(llvm_ty) }, LLVMFunctionTypeKind);
 

@@ -1,18 +1,18 @@
-//! CLI tool to use the functions provided by the [cretonne-llvm](../cton_llvm/index.html) crate.
+//! CLI tool to use the functions provided by the [cranelift-llvm](../cranelift_llvm/index.html) crate.
 //!
-//! Reads LLVM IR files, translates the functions' code to Cretonne IL.
+//! Reads LLVM IR files, translates the functions' code to Cranelift IL.
 
-use cton_llvm::{create_llvm_context, read_llvm, translate_module, SymbolKind};
-use std::path::PathBuf;
-use cretonne::isa::TargetIsa;
-use cretonne::binemit::Reloc;
-use std::path::Path;
-use std::str;
+use cranelift_codegen::binemit::Reloc;
+use cranelift_codegen::isa::TargetIsa;
+use cranelift_llvm::{create_llvm_context, read_llvm, translate_module, SymbolKind};
+use faerie::{Artifact, Decl, Elf, ImportKind, Link, RelocOverride, Target};
+use goblin::elf;
 use std::fmt::format;
+use std::path::Path;
+use std::path::PathBuf;
+use std::str;
 use term;
 use utils::{parse_sets_and_isa, OwnedFlagsOrIsa};
-use faerie::{Artifact, Elf, Target, Link, RelocOverride, ImportKind, Decl};
-use goblin::elf;
 
 macro_rules! vprintln {
     ($x: expr, $($tts:tt)*) => {
@@ -125,9 +125,8 @@ fn handle_module(
         for func in module.functions {
             let func_name = module.strings.get_str(&func.il.name);
             let compilation = func.compilation.unwrap();
-            obj.define(&func_name, compilation.body).expect(
-                "faerie define",
-            );
+            obj.define(&func_name, compilation.body)
+                .expect("faerie define");
             // TODO: reloc should derive from Copy
             for &(ref reloc, ref external_name, offset, addend) in &compilation.relocs.relocs {
                 // FIXME: What about other types of relocs?
@@ -153,21 +152,16 @@ fn handle_module(
         }
         for data in module.data_symbols {
             let data_name = module.strings.get_str(&data.name);
-            obj.define(data_name, data.contents.clone()).expect(
-                "faerie define",
-            );
+            obj.define(data_name, data.contents.clone())
+                .expect("faerie define");
         }
 
-        let file = ::std::fs::File::create(Path::new(arg_output)).map_err(
-            |x| {
-                format(format_args!("{}", x))
-            },
-        )?;
+        let file = ::std::fs::File::create(Path::new(arg_output))
+            .map_err(|x| format(format_args!("{}", x)))?;
 
         // FIXME: Make the format a parameter.
-        obj.write::<Elf>(file).map_err(
-            |x| format(format_args!("{}", x)),
-        )?;
+        obj.write::<Elf>(file)
+            .map_err(|x| format(format_args!("{}", x)))?;
     }
 
     terminal.fg(term::color::GREEN).unwrap();

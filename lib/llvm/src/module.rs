@@ -1,5 +1,5 @@
-use cretonne::ir;
-use cretonne::isa::TargetIsa;
+use cranelift::ir;
+use cranelift::isa::TargetIsa;
 use std::fmt;
 
 use reloc_sink::RelocSink;

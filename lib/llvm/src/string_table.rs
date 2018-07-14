@@ -1,4 +1,4 @@
-use cretonne::ir;
+use cranelift::ir;
 use fnv::FnvBuildHasher;
 use indexmap::IndexMap;
 
@@ -13,7 +13,7 @@ impl StringTable {
         Self { names: FnvIndexSet::default() }
     }
 
-    /// Return the string name for a given cretonne `ExternalName`.
+    /// Return the string name for a given cranelift `ExternalName`.
     pub fn get_str(&self, extname: &ir::ExternalName) -> &str {
         match *extname {
             ir::ExternalName::User { namespace, index } => {
@@ -34,7 +34,7 @@ impl StringTable {
         debug_assert!(previous.is_none());
     }
 
-    /// Return the cretonne `ExternalName` for a given string name.
+    /// Return the cranelift `ExternalName` for a given string name.
     pub fn get_extname<S: Into<String>>(&self, string: S) -> ir::ExternalName {
         let index = self.names.get_full(&string.into()).unwrap().0;
         debug_assert!(index as u32 as usize == index);

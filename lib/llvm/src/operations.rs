@@ -1,6 +1,6 @@
-//! Translation from LLVM IR operations to Cretonne IL instructions.
+//! Translation from LLVM IR operations to Cranelift IL instructions.
 
-use cretonne::ir::{self, InstBuilder, Ebb};
+use cranelift::ir::{self, InstBuilder, Ebb};
 use std::collections::hash_map;
 use std::mem;
 use std::ptr;
@@ -22,7 +22,7 @@ use translate::{translate_symbol_name, translate_string};
 use context::{Context, Variable};
 use types::{translate_type, translate_pointer_type, translate_sig};
 
-/// Translate the incoming parameters for `llvm_func` into Cretonne values
+/// Translate the incoming parameters for `llvm_func` into Cranelift values
 /// defined in the entry block.
 pub fn translate_function_params(llvm_func: LLVMValueRef, entry_ebb: Ebb, ctx: &mut Context) {
     ctx.builder.append_ebb_params_for_function_params(entry_ebb);
@@ -33,7 +33,7 @@ pub fn translate_function_params(llvm_func: LLVMValueRef, entry_ebb: Ebb, ctx: &
     }
 }
 
-/// Translate `llvm_inst`, which is a normal instruction, to Cretonne IL
+/// Translate `llvm_inst`, which is a normal instruction, to Cranelift IL
 /// instructions.
 pub fn translate_inst(
     llvm_bb: LLVMBasicBlockRef,
@@ -74,7 +74,7 @@ fn translate_operation(
                 RegImmOperands::Bool(lhs, rhs) => ctx.builder.ins().bxor_not(lhs, rhs),
                 RegImmOperands::RegReg(lhs, rhs) => ctx.builder.ins().isub(lhs, rhs),
                 RegImmOperands::RegImm(lhs, rhs) => {
-                    // Cretonne has no isub_imm; it uses iadd_imm with a
+                    // Cranelift has no isub_imm; it uses iadd_imm with a
                     // negated immediate instead.
                     let raw_rhs: i64 = rhs.into();
                     ctx.builder.ins().iadd_imm(
@@ -361,7 +361,7 @@ fn translate_operation(
                 let llvm_true_succ = successor(llvm_val, 0);
                 let llvm_false_succ = successor(llvm_val, 1);
                 let llvm_next_bb = unsafe { LLVMGetNextBasicBlock(llvm_bb) };
-                // A conditional branch in Cretonne always falls through in
+                // A conditional branch in Cranelift always falls through in
                 // the not-taken case, so test whether either successor of
                 // the LLVM IR conditional branch can be a fallthrough. If not,
                 // an unconditional branch can be added.
@@ -542,7 +542,7 @@ fn translate_operation(
     })
 }
 
-/// Produce a Cretonne Value holding the value of an LLVM IR Constant.
+/// Produce a Cranelift Value holding the value of an LLVM IR Constant.
 fn materialize_constant(
     llvm_val: LLVMValueRef,
     ctx: &mut Context,
@@ -551,7 +551,7 @@ fn materialize_constant(
     let llvm_kind = unsafe { LLVMGetValueKind(llvm_val) };
     match llvm_kind {
         LLVMUndefValueValueKind => {
-            // Cretonne has no undef; emit a zero.
+            // Cranelift has no undef; emit a zero.
             let ty = translate_type_of(llvm_val, ctx.dl);
             if ty.is_int() {
                 ctx.builder.ins().iconst(ty, 0)
@@ -643,7 +643,7 @@ fn materialize_constant(
     }
 }
 
-/// Translate an LLVM IR intrinsic call to Cretonne.
+/// Translate an LLVM IR intrinsic call to Cranelift.
 fn translate_intrinsic(
     llvm_inst: LLVMValueRef,
     llvm_callee: LLVMValueRef,
@@ -746,7 +746,7 @@ fn translate_intrinsic(
         }
         "llvm.trap" => {
             // This intrinsic isn't a terminator in LLVM IR, but trap is a
-            // terminator in Cretonne. After the trap, start a new basic block.
+            // terminator in Cranelift. After the trap, start a new basic block.
             ctx.builder.ins().trap(ir::TrapCode::User(1));
             let ebb = ctx.builder.create_ebb();
             ctx.builder.seal_block(ebb);
@@ -763,7 +763,7 @@ fn translate_intrinsic(
         }
         "llvm.fmuladd.f32" |
         "llvm.fmuladd.f64" => {
-            // Cretonne currently has no fma instruction, so just lower these
+            // Cranelift currently has no fma instruction, so just lower these
             // as non-fused operations.
             let (a, b, c) = ternary_operands(llvm_inst, ctx, strings);
             let t = ctx.builder.ins().fmul(a, b);
@@ -883,7 +883,7 @@ fn translate_mem_intrinsic(
     );
 
     // Discard the alignment hint for now.
-    // Discard the volatile flag too, which is safe as long as Cretonne doesn't
+    // Discard the volatile flag too, which is safe as long as Cranelift doesn't
     // start optimizing these libcalls.
     let args = [dst_arg, src_arg, len_arg];
 
@@ -938,7 +938,7 @@ fn handle_phi_operands(
     }
 }
 
-/// Translate a GetElementPtr index operand into Cretonne IL.
+/// Translate a GetElementPtr index operand into Cranelift IL.
 fn translate_gep_index(
     llvm_gepty: LLVMTypeRef,
     ptr: ir::Value,
@@ -995,7 +995,7 @@ fn translate_gep_index(
     (ty, ctx.builder.ins().iadd(ptr, offset), imm)
 }
 
-/// Emit a Cretonne jump to the destination corresponding to `llvm_succ`, if
+/// Emit a Cranelift jump to the destination corresponding to `llvm_succ`, if
 /// one is needed.
 fn jump(
     llvm_bb: LLVMBasicBlockRef,
@@ -1114,7 +1114,7 @@ enum RegImmOperands {
 /// Translate the operands for a binary operation taking one register and
 /// one operand which may be either a register or an immediate.
 ///
-/// Using the `*_imm` forms of instructions isn't necessary, as Cretonne
+/// Using the `*_imm` forms of instructions isn't necessary, as Cranelift
 /// should fold constants into immediates just as well, but doing it in
 /// translation makes the output tidier and exercises more of the
 /// builder API.
@@ -1128,7 +1128,7 @@ fn binary_operands_r_ri(
     // possible.
     let lhs = use_val(unsafe { LLVMGetOperand(llvm_val, 0) }, ctx, strings);
 
-    // Optimize the rhs if it's a constant and not boolean, since Cretonne's
+    // Optimize the rhs if it's a constant and not boolean, since Cranelift's
     // `*_imm` instructions don't support boolean types.
     let llvm_rhs = unsafe { LLVMGetOperand(llvm_val, 1) };
     let llvm_rhs_type = unsafe { LLVMTypeOf(llvm_rhs) };
@@ -1174,7 +1174,7 @@ fn successor(llvm_inst: LLVMValueRef, i: ::libc::c_uint) -> LLVMBasicBlockRef {
     unsafe { LLVMGetSuccessor(llvm_inst, i) }
 }
 
-/// Translate an LLVM integer predicate into a Cretonne one.
+/// Translate an LLVM integer predicate into a Cranelift one.
 fn translate_icmp_code(llvm_pred: LLVMIntPredicate) -> ir::condcodes::IntCC {
     match llvm_pred {
         LLVMIntEQ => ir::condcodes::IntCC::Equal,
@@ -1190,7 +1190,7 @@ fn translate_icmp_code(llvm_pred: LLVMIntPredicate) -> ir::condcodes::IntCC {
     }
 }
 
-/// Translate an LLVM floating-point predicate into a Cretonne one.
+/// Translate an LLVM floating-point predicate into a Cranelift one.
 fn translate_fcmp_code(llvm_pred: LLVMRealPredicate) -> ir::condcodes::FloatCC {
     match llvm_pred {
         LLVMRealOEQ => ir::condcodes::FloatCC::Equal,
@@ -1211,7 +1211,7 @@ fn translate_fcmp_code(llvm_pred: LLVMRealPredicate) -> ir::condcodes::FloatCC {
     }
 }
 
-/// Translate LLVM load/store information into Cretonne `MemFlags`.
+/// Translate LLVM load/store information into Cranelift `MemFlags`.
 fn translate_memflags(
     llvm_inst: LLVMValueRef,
     llvm_ty: LLVMTypeRef,
@@ -1238,7 +1238,7 @@ fn translate_memflags(
     flags
 }
 
-/// Translate the type of an LLVM Value into a Cretonne type.
+/// Translate the type of an LLVM Value into a Cranelift type.
 fn translate_type_of(llvm_val: LLVMValueRef, dl: LLVMTargetDataRef) -> ir::Type {
     translate_type(unsafe { LLVMTypeOf(llvm_val) }, dl)
 }

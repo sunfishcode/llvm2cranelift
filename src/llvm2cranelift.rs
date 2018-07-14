@@ -1,16 +1,17 @@
-//! llvm2cretonne driver program.
+//! llvm2cranelift driver program.
 
-extern crate cretonne;
-extern crate cton_llvm;
-extern crate cton_reader;
+extern crate cranelift_codegen;
+extern crate cranelift_llvm;
+extern crate cranelift_reader;
 extern crate docopt;
+extern crate target_lexicon;
 extern crate term;
 #[macro_use]
 extern crate serde_derive;
 extern crate faerie;
 extern crate goblin;
 
-use cretonne::VERSION;
+use cranelift_codegen::VERSION;
 use docopt::Docopt;
 use std::io::{self, Write};
 use std::process;
@@ -19,21 +20,21 @@ mod llvm;
 mod utils;
 
 const USAGE: &str = "
-Cretonne code generator utility
+Cranelift code generator utility
 
 Usage:
-    llvm2cretonne -p [-v] [--set <set>]... [--isa <isa>] <file>...
-    llvm2cretonne [-v] [--set <set>]... [--isa <isa>] -o <output> <file>...
-    llvm2cretonne --help | --version
+    llvm2cranelift -p [-v] [--set <set>]... [--isa <isa>] <file>...
+    llvm2cranelift [-v] [--set <set>]... [--isa <isa>] -o <output> <file>...
+    llvm2cranelift --help | --version
 
 Options:
     -v, --verbose   be more verbose
-    -p, --print     print the resulting Cretonne IL
+    -p, --print     print the resulting Cranelift IL
     -h, --help      print this help message
-    --set=<set>     configure Cretonne settings
-    --isa=<isa>     specify the Cretonne ISA
+    --set=<set>     configure Cranelift settings
+    --isa=<isa>     specify the Cranelift ISA
     -o, --output    specify the output file
-    --version       print the Cretonne version
+    --version       print the Cranelift version
 
 ";
 
@@ -51,12 +52,12 @@ struct Args {
 pub type CommandResult = Result<(), String>;
 
 /// Parse the command line arguments and run the requested command.
-fn cton_util() -> CommandResult {
+fn clif_util() -> CommandResult {
     // Parse command line arguments.
     let args: Args = Docopt::new(USAGE)
         .and_then(|d| {
             d.help(true)
-                .version(Some(format!("Cretonne {}", VERSION)))
+                .version(Some(format!("Cranelift {}", VERSION)))
                 .deserialize()
         })
         .unwrap_or_else(|e| e.exit());
@@ -72,7 +73,7 @@ fn cton_util() -> CommandResult {
 }
 
 fn main() {
-    if let Err(mut msg) = cton_util() {
+    if let Err(mut msg) = clif_util() {
         if !msg.ends_with('\n') {
             msg.push('\n');
         }
