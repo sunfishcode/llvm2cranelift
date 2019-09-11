@@ -141,7 +141,7 @@ fn handle_module(
                     Link {
                         from: &func_name,
                         to: &name,
-                        at: offset as usize,
+                        at: u64::from(offset),
                     },
                     RelocOverride {
                         reloc: translate_reloc(reloc),
