@@ -1,7 +1,8 @@
 //! Translation from LLVM IR operations to Cranelift IL instructions.
 
 use cranelift_codegen::ir::{self, Ebb, InstBuilder};
-use cranelift_codegen::settings::CallConv;
+use cranelift_codegen::isa::CallConv;
+
 use libc;
 use llvm_sys::core::*;
 use llvm_sys::prelude::*;
@@ -19,9 +20,11 @@ use std::mem;
 use std::ptr;
 use string_table::StringTable;
 
-use context::{Context, Variable};
+use context::Context;
 use translate::{translate_string, translate_symbol_name};
 use types::{translate_pointer_type, translate_sig, translate_type};
+use cranelift_codegen::entity::EntityRef;
+use cranelift_frontend::Variable;
 
 /// Translate the incoming parameters for `llvm_func` into Cranelift values
 /// defined in the entry block.
@@ -380,8 +383,8 @@ fn translate_operation(
             } else {
                 op
             };
-            ctx.builder.ins().br_table(index, jt);
             let llvm_default = unsafe { LLVMGetSwitchDefaultDest(llvm_val) };
+            ctx.builder.ins().br_table(index, ctx.ebb_map[&llvm_default], jt);
             jump(llvm_bb, llvm_default, ctx, strings);
             return None;
         }
@@ -486,7 +489,7 @@ fn translate_operation(
                 let callee = use_val(llvm_callee, ctx, strings);
                 ctx.builder.ins().call_indirect(signature, callee, &args)
             };
-            if translate_type_of(llvm_val, ctx.dl) != ir::types::VOID {
+            if translate_type_of(llvm_val, ctx.dl) != ir::types::INVALID {
                 let results = ctx.builder.inst_results(call);
                 debug_assert_eq!(results.len(), 1);
                 results[0]
@@ -572,8 +575,9 @@ fn materialize_constant(
         LLVMGlobalAliasValueKind | LLVMGlobalVariableValueKind => {
             let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings)
                 .expect("unimplemented: unusual symbol names");
-            let global = ctx.builder.create_global_value(ir::GlobalValueData::Sym {
+            let global = ctx.builder.create_global_value(ir::GlobalValueData::Symbol {
                 name,
+                offset: ir::immediates::Imm64::new(0),
                 colocated: false, // TODO: Set this flag
             });
             let ty = translate_pointer_type(ctx.dl);

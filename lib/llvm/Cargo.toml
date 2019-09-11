@@ -11,8 +11,8 @@ license = "Apache-2.0 WITH LLVM-exception"
 name = "cranelift_llvm"
 
 [dependencies]
-cranelift-codegen = "0.15.0"
-cranelift-frontend = "0.15.0"
+cranelift-codegen = "0.42.0"
+cranelift-frontend = "0.42.0"
 fnv = "1.0.6"
 llvm-sys = "50.0.3"
 libc = "0.2.36"
