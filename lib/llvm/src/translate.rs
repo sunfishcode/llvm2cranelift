@@ -36,8 +36,9 @@ pub fn translate_string(charstar: *const libc::c_char) -> Result<String, String>
 pub fn translate_symbol_name(
     charstar: *const libc::c_char,
     strings: &StringTable,
+    is_func: bool,
 ) -> Result<ir::ExternalName, String> {
-    Ok(strings.get_extname(translate_string(charstar)?))
+    Ok(strings.get_extname(translate_string(charstar)?, is_func))
 }
 
 /// Create an LLVM Context.
@@ -84,13 +85,13 @@ pub fn translate_module(
     let mut llvm_func = unsafe { LLVMGetFirstFunction(llvm_mod) };
     while !llvm_func.is_null() {
         let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-        result.strings.declare_extname(translate_string(llvm_name)?);
+        result.strings.declare_extname(translate_string(llvm_name)?, /* is_func */ true);
         llvm_func = unsafe { LLVMGetNextFunction(llvm_func) };
     }
     let mut llvm_global = unsafe { LLVMGetFirstGlobal(llvm_mod) };
     while !llvm_global.is_null() {
         let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
-        result.strings.declare_extname(translate_string(llvm_name)?);
+        result.strings.declare_extname(translate_string(llvm_name)?, /* is_func */ false);
         llvm_global = unsafe { LLVMGetNextGlobal(llvm_global) };
     }
 
@@ -163,7 +164,7 @@ pub fn translate_global(
     strings: &StringTable,
 ) -> Result<(ir::ExternalName, Vec<u8>), String> {
     let llvm_name = unsafe { LLVMGetValueName(llvm_global) };
-    let name = translate_symbol_name(llvm_name, strings)?;
+    let name = translate_symbol_name(llvm_name, strings, /* is_func */ false)?;
 
     let llvm_ty = unsafe { LLVMGetElementType(LLVMTypeOf(llvm_global)) };
     let size = unsafe { LLVMABISizeOfType(dl, llvm_ty) };
@@ -204,7 +205,7 @@ pub fn translate_function(
     // TODO: Reuse the context between separate invocations.
     let mut clif_ctx = cranelift_codegen::Context::new();
     let llvm_name = unsafe { LLVMGetValueName(llvm_func) };
-    clif_ctx.func.name = translate_symbol_name(llvm_name, strings)?;
+    clif_ctx.func.name = translate_symbol_name(llvm_name, strings, /* is_func */ true)?;
     clif_ctx.func.signature =
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
