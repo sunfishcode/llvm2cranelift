@@ -115,10 +115,9 @@ pub fn translate_module(
             }
             for global_var in func.il.global_values.keys() {
                 // TODO: Use the colocated field.
-                let offset0 = ir::immediates::Imm64::new(0);
                 if let ir::GlobalValueData::Symbol {
                     ref name,
-                    offset: offset0,
+                    offset: _offset,
                     colocated: _colocated,
                 } = func.il.global_values[global_var]
                 {

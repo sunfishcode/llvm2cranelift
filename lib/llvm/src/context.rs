@@ -1,13 +1,11 @@
 //! Translation state.
 
-use cranelift_codegen;
 use cranelift_codegen::ir;
 use cranelift_frontend;
 use cranelift_frontend::Variable;
 use llvm_sys::prelude::*;
 use llvm_sys::target::*;
 use std::collections::HashMap;
-use std::u32;
 
 /// Information about Ebbs that we'll create.
 pub struct EbbInfo {
