@@ -1100,6 +1100,11 @@ fn binary_operands_r_ri(
     let llvm_rhs_type = unsafe { LLVMTypeOf(llvm_rhs) };
     if unsafe { LLVMGetIntTypeWidth(llvm_rhs_type) } == 1 {
         RegImmOperands::Bool(lhs, use_val(llvm_rhs, ctx, strings))
+    } else if unsafe { LLVMIsNull(llvm_rhs) } != 0 {
+        RegImmOperands::RegImm(
+            lhs,
+            ir::immediates::Imm64::from(0),
+        )
     } else if unsafe { LLVMIsConstant(llvm_rhs) } != 0 {
         RegImmOperands::RegImm(
             lhs,
