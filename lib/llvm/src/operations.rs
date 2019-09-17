@@ -1105,7 +1105,9 @@ fn binary_operands_r_ri(
             lhs,
             ir::immediates::Imm64::from(0),
         )
-    } else if unsafe { LLVMIsConstant(llvm_rhs) } != 0 {
+    } else if unsafe { LLVMIsConstant(llvm_rhs) } != 0
+        && unsafe { LLVMGetValueKind(llvm_rhs) } == LLVMConstantIntValueKind
+    {
         RegImmOperands::RegImm(
             lhs,
             ir::immediates::Imm64::from(unsafe { LLVMConstIntGetZExtValue(llvm_rhs) } as i64),
