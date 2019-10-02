@@ -12,14 +12,14 @@ path = "src/llvm2cranelift.rs"
 
 [dependencies]
 cranelift-llvm = { path = "lib/llvm" }
-cranelift-codegen = "0.15.0"
-cranelift-reader = "0.15.0"
-target-lexicon = "0.0.3"
+cranelift-codegen = "0.42.0"
+cranelift-reader = "0.42.0"
+target-lexicon = "0.8.1"
 docopt = "0.8.3"
 serde = "1.0.27"
 serde_derive = "1.0.27"
-term = "0.4.6"
-faerie = "0.4.3"
+term = "0.6.1"
+faerie = "0.11.0"
 goblin = "0.0.14"
 
 [workspace]

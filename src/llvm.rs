@@ -5,7 +5,7 @@
 use cranelift_codegen::binemit::Reloc;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_llvm::{create_llvm_context, read_llvm, translate_module, SymbolKind};
-use faerie::{Artifact, Decl, ImportKind, Link, RelocOverride};
+use faerie::{Artifact, Decl, ImportKind, Link};
 use goblin::elf;
 use std::fmt::format;
 use std::path::Path;
@@ -96,7 +96,7 @@ fn handle_module(
         }
     } else {
         let isa: &TargetIsa = isa.expect("compilation requires a target isa");
-
+        
         let mut obj = Artifact::new(isa.triple().clone(), String::from(arg_output));
 
         for import in &module.imports {
@@ -109,17 +109,14 @@ fn handle_module(
             // FIXME: non-global functions.
             obj.declare(
                 module.strings.get_str(&func.il.name),
-                Decl::Function { global: true },
+                Decl::function().global(),
             ).expect("faerie declare");
         }
         // FIXME: non-global and non-writeable data.
         for data in &module.data_symbols {
             obj.declare(
                 module.strings.get_str(&data.name),
-                Decl::Data {
-                    global: true,
-                    writeable: true,
-                },
+                faerie::Decl::data().global().with_writable(true),
             ).expect("faerie declare");
         }
         for func in module.functions {
@@ -141,9 +138,9 @@ fn handle_module(
                     Link {
                         from: &func_name,
                         to: &name,
-                        at: offset as usize,
+                        at: u64::from(offset),
                     },
-                    RelocOverride {
+                    faerie::Reloc::Raw {
                         reloc: translate_reloc(reloc),
                         addend: addend,
                     },

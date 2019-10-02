@@ -1,7 +1,7 @@
 //! Translate types from LLVM IR to Cranelift IL.
 
 use cranelift_codegen::ir;
-use cranelift_codegen::settings::CallConv;
+use cranelift_codegen::isa::CallConv;
 use llvm_sys::core::*;
 use llvm_sys::prelude::*;
 use llvm_sys::target::*;
@@ -28,7 +28,7 @@ pub fn translate_pointer_type(dl: LLVMTargetDataRef) -> ir::Type {
 /// Translate an LLVM first-class type into a Cranelift type.
 pub fn translate_type(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Type {
     match unsafe { LLVMGetTypeKind(llvm_ty) } {
-        LLVMVoidTypeKind => ir::types::VOID,
+        LLVMVoidTypeKind => ir::types::INVALID,
         LLVMHalfTypeKind => panic!("unimplemented: f16 type"),
         LLVMFloatTypeKind => ir::types::F32,
         LLVMDoubleTypeKind => ir::types::F64,
@@ -77,7 +77,7 @@ pub fn translate_sig(llvm_ty: LLVMTypeRef, dl: LLVMTargetDataRef) -> ir::Signatu
 
     let mut returns: Vec<ir::AbiParam> = Vec::with_capacity(1);
     match translate_type(unsafe { LLVMGetReturnType(llvm_ty) }, dl) {
-        ir::types::VOID => {}
+        ir::types::INVALID => {}
         ty => returns.push(ir::AbiParam::new(ty)),
     }
     sig.returns = returns;

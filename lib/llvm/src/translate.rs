@@ -1,7 +1,7 @@
 //! Translation from LLVM IR to Cranelift IL.
 
 use cranelift_codegen;
-use cranelift_codegen::binemit::NullTrapSink;
+use cranelift_codegen::binemit::{NullTrapSink, NullStackmapSink};
 use cranelift_codegen::ir;
 use cranelift_codegen::isa::TargetIsa;
 use cranelift_frontend;
@@ -18,7 +18,7 @@ use std::ptr;
 use std::str;
 use string_table::StringTable;
 
-use context::{Context, EbbInfo, Variable};
+use context::{Context, EbbInfo};
 use module::{Compilation, CompiledFunction, DataSymbol, Module, SymbolKind};
 use operations::{translate_function_params, translate_inst};
 use reloc_sink::RelocSink;
@@ -115,8 +115,9 @@ pub fn translate_module(
             }
             for global_var in func.il.global_values.keys() {
                 // TODO: Use the colocated field.
-                if let ir::GlobalValueData::Sym {
+                if let ir::GlobalValueData::Symbol {
                     ref name,
+                    offset: _offset,
                     colocated: _colocated,
                 } = func.il.global_values[global_var]
                 {
@@ -208,7 +209,7 @@ pub fn translate_function(
         translate_sig(unsafe { LLVMGetElementType(LLVMTypeOf(llvm_func)) }, dl);
 
     {
-        let mut il_builder = cranelift_frontend::FunctionBuilderContext::<Variable>::new();
+        let mut il_builder = cranelift_frontend::FunctionBuilderContext::new();
         let mut ctx = Context::new(&mut clif_ctx.func, &mut il_builder, dl);
 
         // Make a pre-pass through the basic blocks to collect predecessor
@@ -228,14 +229,15 @@ pub fn translate_function(
     }
 
     if let Some(isa) = isa {
-        let code_size = clif_ctx.compile(isa).map_err(|err| err.to_string())?;
+        let code_size = clif_ctx.compile(isa).map_err(|err| err.to_string())?.code_size;
         let mut code_buf: Vec<u8> = Vec::with_capacity(code_size as usize);
         let mut reloc_sink = RelocSink::new();
         let mut trap_sink = NullTrapSink {};
+        let mut stackmap_sink = NullStackmapSink {};
         code_buf.resize(code_size as usize, 0);
         // TODO: Use the safe interface instead.
         unsafe {
-            clif_ctx.emit_to_memory(isa, code_buf.as_mut_ptr(), &mut reloc_sink, &mut trap_sink);
+            clif_ctx.emit_to_memory(isa, code_buf.as_mut_ptr(), &mut reloc_sink, &mut trap_sink, &mut stackmap_sink);
         }
 
         Ok(CompiledFunction {

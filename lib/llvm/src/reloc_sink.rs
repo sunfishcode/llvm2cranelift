@@ -39,6 +39,10 @@ impl<'func> binemit::RelocSink for RelocSink {
         self.relocs.push((reloc, name.clone(), offset, addend));
     }
 
+    fn reloc_constant(&mut self, _: binemit::CodeOffset, _: binemit::Reloc, _: ir::ConstantOffset) {
+        panic!("reloc_constant not yet implemented");
+    }
+
     fn reloc_jt(
         &mut self,
         _offset: binemit::CodeOffset,
