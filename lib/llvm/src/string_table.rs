@@ -26,6 +26,14 @@ impl StringTable {
                     .0
                     .as_str()
             }
+            ir::ExternalName::LibCall(libcall) => {
+                match libcall {
+                    ir::LibCall::Memcpy => "memcpy",
+                    ir::LibCall::Memmove => "memmove",
+                    ir::LibCall::Memset => "memset",
+                    _ => panic!("unhandled LibCall {}", libcall),
+                }
+            }
             _ => panic!("non-user names not yet implemented"),
         }
     }

@@ -103,14 +103,22 @@ pub fn translate_module(
             // Collect externally referenced symbols for the module.
             for func_ref in func.il.dfg.ext_funcs.keys() {
                 let name = &func.il.dfg.ext_funcs[func_ref].name;
-                // If this function is defined inside the module, don't list it
-                // as an import.
-                let c_str = ffi::CString::new(result.strings.get_str(name))
-                    .map_err(|err| err.description().to_string())?;
-                let llvm_str = c_str.as_ptr();
-                let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
-                if llvm_func.is_null() || unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
-                    result.imports.push((name.clone(), SymbolKind::Function));
+                match name {
+                    ir::ExternalName::User{..} => {
+                        // If this function is defined inside the module, don't list it
+                        // as an import.
+                        let c_str = ffi::CString::new(result.strings.get_str(name))
+                            .map_err(|err| err.description().to_string())?;
+                        let llvm_str = c_str.as_ptr();
+                        let llvm_func = unsafe { LLVMGetNamedFunction(llvm_mod, llvm_str) };
+                        if llvm_func.is_null() || unsafe { LLVMIsDeclaration(llvm_func) } != 0 {
+                            result.imports.push((name.clone(), SymbolKind::Function));
+                        }
+                    }
+                    ir::ExternalName::LibCall{..} => {
+                        result.imports.push((name.clone(), SymbolKind::Function));
+                    }
+                    _ => panic!("unhandled: {}", name)
                 }
             }
             for global_var in func.il.global_values.keys() {
