@@ -177,7 +177,7 @@ fn translate_operation(
                     ir::types::F32 => "fmodf",
                     ir::types::F64 => "fmod",
                     _ => panic!("frem unimplemented for type {:?}", ty),
-                }),
+                }, /* is_func */ true),
                 signature: ctx.builder.import_signature(sig),
                 colocated: false, // TODO: Set this flag
             };
@@ -475,7 +475,7 @@ fn translate_operation(
             }
             let signature = ctx.builder
                 .import_signature(translate_sig(llvm_functy, ctx.dl));
-            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_callee) }, strings)
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_callee) }, strings, /* is_func */ true)
                 .expect("unimplemented: unusual function names");
             let call = if unsafe { LLVMGetValueKind(llvm_callee) } == LLVMFunctionValueKind {
                 let data = ir::ExtFuncData {
@@ -562,7 +562,7 @@ fn materialize_constant(
                 unsafe { LLVMGetElementType(LLVMTypeOf(llvm_val)) },
                 ctx.dl,
             ));
-            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings)
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings, /* is_func */ true)
                 .expect("unimplemented: unusual symbol names");
             let callee = ctx.builder.import_function(ir::ExtFuncData {
                 name,
@@ -573,7 +573,7 @@ fn materialize_constant(
             ctx.builder.ins().func_addr(ty, callee)
         }
         LLVMGlobalAliasValueKind | LLVMGlobalVariableValueKind => {
-            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings)
+            let name = translate_symbol_name(unsafe { LLVMGetValueName(llvm_val) }, strings, /* is_func */ false)
                 .expect("unimplemented: unusual symbol names");
             let global = ctx.builder.create_global_value(ir::GlobalValueData::Symbol {
                 name,
@@ -809,7 +809,7 @@ fn translate_intr_libcall(
         ));
     }
 
-    let name = strings.get_extname(name);
+    let name = strings.get_extname(name, /* is_func */ true);
     let signature = ctx.builder.import_signature(translate_sig(
         unsafe { LLVMGetElementType(LLVMTypeOf(llvm_callee)) },
         ctx.dl,
@@ -858,7 +858,7 @@ fn translate_mem_intrinsic(
     // start optimizing these libcalls.
     let args = [dst_arg, src_arg, len_arg];
 
-    let funcname = strings.get_extname(name);
+    let funcname = strings.get_extname(name, /* is_func */ true);
     // TODO: Translate the calling convention.
     let mut sig = ir::Signature::new(CallConv::SystemV);
     sig.params.resize(3, ir::AbiParam::new(pointer_type));
